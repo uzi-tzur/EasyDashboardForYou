@@ -4,7 +4,7 @@
 
 Turn any spreadsheet into a filterable, sortable, editable dashboard, then export it back.
 
-**Live app:** https://uzi-tzur.github.io/EasyDashboardForYou/
+**Live app:** https://easydashboardforyou.vercel.app (production, Vercel) · mirror: https://uzi-tzur.github.io/EasyDashboardForYou/
 
 ## Run it
 
@@ -83,6 +83,9 @@ Importing a different spreadsheet creates a new dashboard. Re-importing the same
 `samples/` contains the Release Tracking example as a CSV plus its template.
 
 ## Publishing updates
+
+Production runs on Vercel (project `easydashboardforyou` in the `uzitzurai-2779` account). Deploy with `vercel deploy --prod` from this folder while signed in to that account.
+
 
 `index.html` loads the CSS and JS files with a version stamp (`?v=…`). When you change any of them, bump that stamp in `index.html`, so browsers fetch the new files instead of reusing cached ones (GitHub Pages lets browsers cache files for 10 minutes).
 
