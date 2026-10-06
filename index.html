@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EasyDashboardForYou</title>
+  <meta name="description" content="Turn any spreadsheet into a filterable, editable dashboard.">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="css/styles.css">
   <!-- SheetJS: reads/writes Excel files -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -32,8 +35,8 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark"><svg class="i"><use href="#i-logo"/></svg></span>
-      <span class="brand-name">EasyDashboardForYou</span>
+      <img class="brand-mark" src="assets/logo-mark.png" alt="" width="36" height="36">
+      <span class="brand-name"><span class="w1">Easy</span><span class="w2">Dashboard</span><span class="w3">ForYou</span></span>
     </div>
     <div class="actions">
       <div class="menu">
@@ -70,7 +73,7 @@
 
   <main>
     <section id="emptyState" class="empty" hidden>
-      <span class="empty-icon"><svg class="i"><use href="#i-logo"/></svg></span>
+      <img class="empty-logo" src="assets/logo.png" alt="EasyDashboardForYou" width="320" height="247">
       <h2>Build a dashboard from your spreadsheet</h2>
       <p>Import an Excel, CSV, or Google Sheet, map its columns to dashboard fields, then filter, sort and edit right here.</p>
       <div class="empty-actions">
@@ -115,6 +118,10 @@
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    Created by Uzi Tzur. All rights reserved. Contact: <a href="tel:+12143540604">214.354.0604</a>
+  </footer>
 
   <!-- Field mapping dialog -->
   <dialog id="mappingDialog" class="dialog wide">

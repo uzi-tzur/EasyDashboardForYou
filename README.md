@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="EasyDashboardForYou" width="320"></p>
+
 # EasyDashboardForYou
 
 Turn any spreadsheet into a filterable, sortable, editable dashboard, then export it back.
@@ -77,3 +79,7 @@ Google requires each app to have its own OAuth **Client ID**. A Client ID is a p
 | `js/google-sheets.js` | Google sign-in and direct Sheets export |
 | `js/config.js` | Settings (Google Client ID) |
 | `js/sample.js` | Built-in Release Tracking sample |
+
+---
+
+Created by Uzi Tzur. All rights reserved. Contact: 214.354.0604
