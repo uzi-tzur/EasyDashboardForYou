@@ -23,7 +23,7 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - a Google Sheet link (the sheet must be shared as *Anyone with the link can view*; the tab in the link's `gid` is the one imported),
    - cells pasted from Excel or Google Sheets.
 2. **Field mapping** (also opens when you import or click *Start from scratch*). It has three tabs:
-   - **Fields**: the columns of your dashboard. Rename them, choose how each is shown (*Text, Long text, Number, Date, Label, Tags, Status*), switch on a **Filter** or **Chart**, drag to reorder, remove fields you don't need (restorable until you save), or **Add field**.
+   - **Fields**: the columns of your dashboard. Rename them, choose how each is shown (*Text, Long text, Number, Date, Label, Tags, Status*), switch on a **Filter** (on by default for every field except long text; *Filter all* toggles them all) or **Chart**, drag to reorder, remove fields you don't need (restorable until you save), or **Add field**.
    - **Values & colours**: for each Status or Label field, one line per value. Type to rename it, click the dot to change its colour, drag to reorder, add new values, or delete one (you choose what its rows become).
    - **Summary cards**: cards that count rows where a field contains a value, plus which field colours the bar at the left of each row.
 

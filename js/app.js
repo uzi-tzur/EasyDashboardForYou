@@ -470,7 +470,7 @@
     else if (filled.length && filled.every(v => /^\d{4}-\d{2}-\d{2}/.test(v) || /^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$/.test(v))) type = 'date';
     else if (avgLen > 40) type = 'longtext';
     else if (avgLen < 30 && uniq.size < filled.length && uniq.size <= Math.min(20, Math.max(2, filled.length * 0.6))) type = 'badge';
-    const filter = ['status', 'badge', 'tags'].includes(type) && uniq.size > 1;
+    const filter = type !== 'longtext'; // every field gets a filter except long free text
     return { type, filter };
   }
 
@@ -609,7 +609,14 @@
             if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); moveField(idx, e.key === 'ArrowUp' ? -1 : 1); }
           }
         }),
-        el('select', { class: 'field-type', 'aria-label': 'Shown as', onchange: e => { f.type = e.target.value; } },
+        el('select', {
+          class: 'field-type', 'aria-label': 'Shown as',
+          onchange: e => {
+            f.type = e.target.value;
+            const want = ['status', 'badge', 'tags'].includes(f.type) ? true : f.type === 'longtext' ? false : null;
+            if (want !== null && f.filter !== want) { f.filter = want; renderMapRows(); }
+          }
+        },
           TYPES.map(([v, l]) => el('option', { value: v, selected: v === f.type }, l))),
         el('span', { class: 'field-opts' },
           toggle('Filter', 'filter', 'Show a filter for this field above the table'),
@@ -626,6 +633,11 @@
       renderMapRows();
     });
     if (!mapCtx.items.length) list.append(el('p', { class: 'muted pad' }, 'No fields yet. Click “Add field”.'));
+
+    const allOn = mapCtx.items.length > 0 && mapCtx.items.every(it => it.field.filter);
+    const filterAll = $('#filterAll');
+    filterAll.textContent = allOn ? 'Filter none' : 'Filter all';
+    filterAll.onclick = () => { mapCtx.items.forEach(it => { it.field.filter = !allOn; }); renderMapRows(); };
 
     // removed fields can be restored until the dialog is saved
     const removed = $('#mapRemoved');
@@ -646,7 +658,7 @@
 
   function addField() {
     const label = 'New field';
-    const it = { field: { id: uniqueFieldId(label), source: '', label, type: 'text', show: true, filter: false, chart: false }, sample: '' };
+    const it = { field: { id: uniqueFieldId(label), source: '', label, type: 'text', show: true, filter: true, chart: false }, sample: '' };
     mapCtx.items.push(it);
     $('#mapError').hidden = true;
     renderMapRows();
@@ -1225,7 +1237,7 @@
   function renderFilters() {
     const box = $('#filters');
     box.innerHTML = '';
-    const fields = template.fields.filter(f => f.filter && uniqueValues(f).length);
+    const fields = template.fields.filter(f => f.filter);
     if (!fields.length) return;
     box.append(el('span', { class: 'filters-label' }, icon('filter'), 'Filter'));
     for (const f of fields) {
@@ -1265,7 +1277,7 @@
           el('span', { class: 'spacer' }),
           el('span', { class: 'count' }, counts.get(v) || 0)));
       }
-      if (!shown.length) list.append(el('div', { class: 'filter-option muted' }, 'No matches'));
+      if (!shown.length) list.append(el('div', { class: 'filter-option muted' }, values.length ? 'No matches' : 'No values yet. Add rows to filter by this field.'));
     };
     fill('');
     pop.innerHTML = '';
