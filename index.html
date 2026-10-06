@@ -53,8 +53,8 @@
           <hr>
           <div class="menu-label">Setup</div>
           <button data-action="load-template"><svg class="i"><use href="#i-layers"/></svg>Load template (.json)…</button>
-          <button data-action="new-blank"><svg class="i"><use href="#i-plus"/></svg>Start from scratch</button>
-          <button data-action="load-sample"><svg class="i"><use href="#i-zap"/></svg>Load sample: Release Tracking</button>
+          <button data-action="new-blank"><svg class="i"><use href="#i-plus"/></svg>New blank dashboard</button>
+          <button data-action="demo-gallery"><svg class="i"><use href="#i-zap"/></svg>Demo templates…</button>
         </div>
       </div>
       <button class="btn" data-action="edit-mapping"><svg class="i"><use href="#i-sliders"/></svg><span class="lbl">Field mapping</span></button>
@@ -86,7 +86,7 @@
         <button class="btn" data-action="import-gsheet">Google Sheet link</button>
         <button class="btn" data-action="import-paste">Paste data</button>
         <button class="btn" data-action="new-blank">Start from scratch</button>
-        <button class="btn" data-action="load-sample">Try the sample</button>
+        <button class="btn" data-action="demo-gallery">Use a demo template</button>
       </div>
       <p class="hint">Tip: you can also drag &amp; drop a file anywhere on this page.</p>
     </section>
@@ -96,6 +96,10 @@
         <div>
           <h1 id="dashTitle" class="dash-title" title="Click to rename">Dashboard</h1>
           <p id="dashMeta" class="dash-meta"></p>
+        </div>
+        <div class="menu dash-switch">
+          <button class="btn" data-menu="dashMenu" aria-haspopup="true"><svg class="i"><use href="#i-layers"/></svg><span id="dashCount">My dashboards</span><svg class="i caret"><use href="#i-chevron"/></svg></button>
+          <div class="menu-list right" id="dashMenu"></div>
         </div>
       </div>
 
@@ -169,6 +173,34 @@
       <div class="dialog-actions">
         <button type="button" class="btn" id="mapCancel">Cancel</button>
         <button type="submit" class="btn primary" id="mapSubmit">Build dashboard</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Demo templates gallery -->
+  <dialog id="demoDialog" class="dialog wide demo-dialog">
+    <div class="demo-head">
+      <div>
+        <h2>Demo templates</h2>
+        <p class="muted">Start a new dashboard from a ready-made template. You can change everything later in Field mapping.</p>
+      </div>
+      <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="demoGrid" class="demo-grid"></div>
+  </dialog>
+
+  <!-- Duplicate dashboard -->
+  <dialog id="dupDialog" class="dialog">
+    <form id="dupForm">
+      <h2>Duplicate dashboard</h2>
+      <p class="muted">Makes a copy with the same fields, colours, filters and summary cards.</p>
+      <label class="field">Name of the copy
+        <input id="dupName" type="text" required>
+      </label>
+      <label class="check-line"><input type="checkbox" id="dupRows" checked> Copy the rows too (<span id="dupRowCount"></span>)</label>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Duplicate</button>
       </div>
     </form>
   </dialog>
@@ -248,7 +280,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/google-sheets.js"></script>
-  <script src="js/sample.js"></script>
+  <script src="js/demos.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

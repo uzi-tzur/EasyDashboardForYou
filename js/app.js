@@ -13,7 +13,8 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'easydashboardforyou.v1';
+  const STORAGE_KEY = 'easydashboardforyou.v2';       // { activeId, list: [dashboard] }
+  const LEGACY_STORAGE_KEY = 'easydashboardforyou.v1'; // single dashboard (before multi-dashboard support)
   const TYPES = [
     ['text', 'Text'],
     ['longtext', 'Long text (wraps)'],
@@ -136,23 +137,175 @@
 
   /* ---------- persistence ---------- */
 
+  // Every dashboard: { id, template, rows, gsheetTarget, updatedAt }. The active one is mirrored
+  // in the working variables (template, rows, …) and written back by save().
+  let store = { activeId: null, list: [] };
+
+  const newDashboardId = () => 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const activeDashboard = () => store.list.find(d => d.id === store.activeId) || null;
+  const clone = x => JSON.parse(JSON.stringify(x));
+
+  function persist() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); } catch { /* storage unavailable */ }
+  }
+
   function save() {
     updatedAt = Date.now();
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ template, rows, gsheetTarget, updatedAt })); } catch { /* storage unavailable */ }
+    if (template) {
+      let d = activeDashboard();
+      if (!d) {
+        d = { id: newDashboardId() };
+        store.list.push(d);
+        store.activeId = d.id;
+      }
+      Object.assign(d, { template, rows, gsheetTarget, updatedAt });
+    }
+    persist();
+  }
+
+  // Make a dashboard the working one (or none → welcome screen).
+  function activate(id) {
+    const d = store.list.find(x => x.id === id) || null;
+    store.activeId = d?.id || null;
+    template = d?.template || null;
+    rows = d?.rows || [];
+    gsheetTarget = d?.gsheetTarget || null;
+    updatedAt = d?.updatedAt || null;
+    nextId = rows.reduce((m, r) => Math.max(m, r._id || 0), 0) + 1;
+    rows.forEach(r => { if (!r._id) r._id = nextId++; });
+    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null });
+    $('#search').value = '';
+    persist();
+    render();
+  }
+
+  // Start a new dashboard as the working one; save() files it.
+  function startNewDashboard() {
+    store.activeId = null;
+    gsheetTarget = null;
+    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null });
+    $('#search').value = '';
   }
 
   function load() {
     try {
       const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      if (data?.template?.fields) {
-        template = data.template;
-        rows = data.rows || [];
-        gsheetTarget = data.gsheetTarget || null;
-        updatedAt = data.updatedAt || null;
-        nextId = rows.reduce((m, r) => Math.max(m, r._id || 0), 0) + 1;
-        rows.forEach(r => { if (!r._id) r._id = nextId++; });
+      if (data?.list) store = { activeId: data.activeId, list: data.list.filter(d => d?.template?.fields) };
+      else {
+        // migrate the single dashboard from the previous version
+        const old = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || 'null');
+        if (old?.template?.fields) {
+          const d = { id: newDashboardId(), template: old.template, rows: old.rows || [], gsheetTarget: old.gsheetTarget || null, updatedAt: old.updatedAt || Date.now() };
+          store = { activeId: d.id, list: [d] };
+          persist();
+        }
       }
     } catch { /* ignore corrupt storage */ }
+    activate(store.list.some(d => d.id === store.activeId) ? store.activeId : store.list[0]?.id);
+  }
+
+  /* ---------- dashboards: switch, duplicate, delete, demos ---------- */
+
+  function renderDashMenu() {
+    const menu = $('#dashMenu');
+    menu.innerHTML = '';
+    const n = store.list.length;
+    $('#dashCount').textContent = n > 1 ? `My dashboards (${n})` : 'My dashboards';
+    menu.append(el('div', { class: 'menu-label' }, 'Switch dashboard'));
+    const sorted = [...store.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    for (const d of sorted) {
+      const active = d.id === store.activeId;
+      const count = d.rows?.length || 0;
+      menu.append(el('button', { 'data-switch': d.id, class: active ? 'current' : '', 'aria-current': active ? 'true' : undefined },
+        el('span', { class: 'check' }, active ? '✓' : ''),
+        el('span', { class: 'dash-item' },
+          el('span', { class: 'dash-item-title' }, d.template.title),
+          el('span', { class: 'dash-item-meta' }, `${count} record${count === 1 ? '' : 's'}`))));
+    }
+    menu.append(el('hr'),
+      el('button', { 'data-action': 'new-blank' }, icon('plus'), 'New blank dashboard'),
+      el('button', { 'data-action': 'duplicate' }, icon('clipboard'), 'Duplicate this dashboard…'),
+      el('button', { 'data-action': 'demo-gallery' }, icon('zap'), 'Demo templates…'),
+      el('hr'),
+      el('button', { 'data-action': 'delete-dashboard', class: 'danger-item' }, icon('trash'), 'Delete this dashboard…'));
+  }
+
+  function openDuplicate() {
+    if (!template) return;
+    $('#dupName').value = `${template.title} (copy)`;
+    $('#dupRowCount').textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+    $('#dupRows').checked = true;
+    $('#dupDialog').showModal();
+    $('#dupName').select();
+  }
+
+  function duplicateDashboard(name, withRows) {
+    const t = clone(template);
+    t.title = name || `${template.title} (copy)`;
+    const r = withRows ? clone(rows) : [];
+    startNewDashboard();
+    template = t;
+    rows = r;
+    nextId = rows.reduce((m, x) => Math.max(m, x._id || 0), 0) + 1;
+    save();
+    render();
+    toast(`Created “${t.title}”.`);
+  }
+
+  function deleteDashboard() {
+    const d = activeDashboard();
+    if (!d) return;
+    if (!confirm(`Delete the dashboard “${d.template.title}” and its ${d.rows.length} row(s) from this browser?`)) return;
+    const index = store.list.indexOf(d);
+    store.list.splice(index, 1);
+    const next = store.list[Math.min(index, store.list.length - 1)];
+    activate(next?.id);
+    const undo = el('a', { href: '#', onclick: e => {
+      e.preventDefault();
+      store.list.splice(index, 0, d);
+      activate(d.id);
+      $('#toast').hidden = true;
+    } }, 'Undo');
+    toast([`Deleted “${d.template.title}”. `, undo], 8000);
+  }
+
+  function demoRows(demo) {
+    return demo.rows.map((r, i) => {
+      const row = { _id: i + 1 };
+      demo.template.fields.forEach(f => {
+        const col = demo.headers.findIndex(h => norm(h) === norm(f.source));
+        row[f.id] = col < 0 ? '' : (r[col] ?? '');
+      });
+      return row;
+    });
+  }
+
+  function useDemo(demo, withRows) {
+    startNewDashboard();
+    template = { colors: {}, addedValues: {}, valueOrder: {}, ...clone(demo.template) };
+    rows = withRows ? demoRows(demo) : [];
+    nextId = rows.length + 1;
+    save();
+    $('#demoDialog').close();
+    render();
+    toast(withRows ? `Created “${template.title}” with sample data.` : `Created an empty “${template.title}” dashboard. Click “Add row” to start.`);
+  }
+
+  function openDemoGallery() {
+    const grid = $('#demoGrid');
+    grid.innerHTML = '';
+    for (const demo of window.DEMOS || []) {
+      const fields = demo.template.fields;
+      grid.append(el('article', { class: 'demo-card' },
+        el('h3', {}, demo.name),
+        el('p', { class: 'muted' }, demo.description),
+        el('div', { class: 'demo-fields' }, fields.slice(0, 7).map(f => el('span', { class: 'demo-field' }, f.label))),
+        el('p', { class: 'demo-meta' }, `${fields.length} fields · ${demo.rows.length} sample rows`),
+        el('div', { class: 'demo-actions' },
+          el('button', { type: 'button', class: 'btn primary small', onclick: () => useDemo(demo, true) }, 'Use with sample data'),
+          el('button', { type: 'button', class: 'btn small', onclick: () => useDemo(demo, false) }, 'Use empty'))));
+    }
+    $('#demoDialog').showModal();
   }
 
   /* ---------- parsing ---------- */
@@ -745,6 +898,9 @@
     const fields = mapCtx.items.map((it, i) => ({ ...it.field, show: true, label: it.field.label.trim() || it.field.source || `Field ${i + 1}` }));
     const searchable = fields.filter(f => ['text', 'longtext', 'badge', 'status'].includes(f.type)).slice(0, 3).map(f => f.label.toLowerCase());
     const previous = template;
+    // a new data set becomes its own dashboard; re-importing the same sheet refreshes the current one
+    const replacing = mapCtx.isNew && previous && mapCtx.base === previous;
+    if (mapCtx.isNew && !replacing) startNewDashboard();
     template = {
       title: $('#mapTitle').value.trim() || 'My Dashboard',
       searchHint: searchable.length ? `Search ${searchable.join(', ')}…` : 'Search…',
@@ -759,8 +915,6 @@
         .filter(([id, list]) => fields.some(f => f.id === id) && list?.length))
     };
     if (mapCtx.isNew) {
-      // a different data set gets its own spreadsheet on the next Google Sheets export
-      if (mapCtx.base !== previous) gsheetTarget = null;
       nextId = 1;
       rows = mapCtx.table.rows.map(r => {
         const row = { _id: nextId++ };
@@ -786,7 +940,10 @@
     for (const id of Object.keys(ui.filters)) if (!fieldById(id)?.filter) delete ui.filters[id];
     save();
     render();
-    toast(mapCtx.isNew ? (rows.length ? `Dashboard built with ${rows.length} rows.` : 'Dashboard ready. Click “Add row” to add your first record.') : 'Changes saved.');
+    toast(!mapCtx.isNew ? 'Changes saved.'
+      : replacing ? `Data refreshed: ${rows.length} rows.`
+      : rows.length ? `New dashboard “${template.title}” created with ${rows.length} rows.`
+      : `New dashboard “${template.title}” created. Click “Add row” to add your first record.`);
   }
 
   /* ---------- filtering / sorting ---------- */
@@ -860,6 +1017,7 @@
 
   function render() {
     slotCache = new Map();
+    renderDashMenu();
     const has = !!template;
     $('#emptyState').hidden = has;
     $('#dashboard').hidden = !has;
@@ -1402,17 +1560,13 @@
       const data = JSON.parse(await file.text());
       const t = data.template || data;
       if (!Array.isArray(t.fields)) throw new Error('Not a dashboard template.');
-      if (template && rows.length) {
-        // re-map the current data through the loaded template
-        const table = { headers: template.fields.map(f => f.label), rows: rows.map(r => template.fields.map(f => r[f.id] ?? '')) };
-        openMapping({ table, base: t });
-      } else {
-        template = { searchHint: 'Search…', stats: [], accentField: '', ...t };
-        rows = [];
-        save();
-        render();
-        toast('Template loaded. Import data or add rows — matching columns map automatically.', 6000);
-      }
+      startNewDashboard();
+      template = { searchHint: 'Search…', stats: [], accentField: '', ...t };
+      rows = [];
+      nextId = 1;
+      save();
+      render();
+      toast(`New dashboard “${template.title}” created from the template. Import data (matching columns fill in automatically) or add rows.`, 7000);
     } catch (err) {
       toast(`Could not load template: ${err.message}`, 6000);
     }
@@ -1435,11 +1589,9 @@
       source: 'My',
       fresh: true
     }),
-    'load-sample': () => openMapping({
-      table: { headers: SAMPLE.headers, rows: SAMPLE.rows.map(r => [...r]) },
-      base: SAMPLE.template,
-      source: 'Release Tracking'
-    }),
+    'demo-gallery': openDemoGallery,
+    'duplicate': openDuplicate,
+    'delete-dashboard': deleteDashboard,
     'edit-mapping': () => openMapping(),
     'add-row': addRow,
     'clear-filters': () => { ui.filters = {}; ui.search = ''; ui.statFilter = null; $('#search').value = ''; render(); },
@@ -1464,6 +1616,9 @@
 
     const act = e.target.closest('[data-action]');
     if (act && actions[act.dataset.action]) { actions[act.dataset.action](); return; }
+
+    const sw = e.target.closest('[data-switch]');
+    if (sw) { closeMenus(); if (sw.dataset.switch !== store.activeId) activate(sw.dataset.switch); return; }
 
     const del = e.target.closest('[data-del]');
     if (del) { deleteRow(Number(del.dataset.del)); return; }
@@ -1548,6 +1703,13 @@
       btn.disabled = false;
       btn.textContent = 'Import';
     }
+  });
+
+  // Duplicate dialog
+  $('#dupForm').addEventListener('submit', e => {
+    e.preventDefault();
+    $('#dupDialog').close();
+    duplicateDashboard($('#dupName').value.trim(), $('#dupRows').checked);
   });
 
   // Google Sheets export dialog

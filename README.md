@@ -63,11 +63,22 @@ Google requires each app to have its own OAuth **Client ID**. A Client ID is a p
 
 **Privacy:** the app asks only for the `drive.file` permission. It can create spreadsheets and edit the ones it created, but it cannot see anything else in your Drive. The sign-in token stays in memory and is never stored.
 
+## Several dashboards
+
+Keep as many dashboards as you like. Use **My dashboards** (next to the dashboard title) to:
+- switch between dashboards,
+- create a **New blank dashboard**,
+- **Duplicate** the current one (same fields, colours, filters and cards, with or without its rows),
+- open **Demo templates**: Release Tracking, Student Records, Project Tasks, Sales Pipeline and Inventory, each usable with sample data or empty,
+- **Delete** the current dashboard (you can undo right after).
+
+Importing a different spreadsheet creates a new dashboard. Re-importing the same sheet (same columns) refreshes the current dashboard's data.
+
 ## Templates
 
-*Export → Save template* writes the mapping (fields, types, filters, cards, title) to a `.json` file. *Import → Load template* applies it to a new data set, and columns are matched by name.
+*Export → Save template* writes the mapping (fields, types, filters, cards, title) to a `.json` file. *Import → Load template* creates a new dashboard from it; then import data and its columns are matched by name.
 
-`samples/` contains the Release Tracking example as a CSV plus its template. *Import → Load sample* loads it in one click.
+`samples/` contains the Release Tracking example as a CSV plus its template.
 
 ## Files
 
@@ -78,7 +89,7 @@ Google requires each app to have its own OAuth **Client ID**. A Client ID is a p
 | `js/app.js` | Import, mapping, rendering, editing, export |
 | `js/google-sheets.js` | Google sign-in and direct Sheets export |
 | `js/config.js` | Settings (Google Client ID) |
-| `js/sample.js` | Built-in Release Tracking sample |
+| `js/demos.js` | Demo templates (Release Tracking, Student Records, Project Tasks, Sales Pipeline, Inventory) |
 
 ---
 
