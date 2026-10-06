@@ -500,7 +500,6 @@
     $('#dashboard').hidden = !has;
     $$('[data-action="edit-mapping"],[data-action="add-row"],[data-menu="exportMenu"]')
       .forEach(b => (b.disabled = !has));
-    document.title = has ? `${template.title} · EasyDashboardForYou` : 'EasyDashboardForYou';
     if (!has) return;
     if ($('#dashTitle').contentEditable !== 'true') $('#dashTitle').textContent = template.title;
     $('#search').placeholder = template.searchHint || 'Search…';
