@@ -29,7 +29,7 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - whether it gets a filter,
    - whether it gets a breakdown chart.
 
-   In the same dialog you can also **add new Status or Badge values** (they appear in filters and in the cell dropdown before any row uses them), **rename any value** (every row using it is updated; renaming to an existing value merges them) and pick its **colour** (or leave it on Auto). You also set the dashboard title, the field that colours the row bar, and the **summary cards** (each card counts the visible rows where a field contains a value). The app pre-fills a best guess for every column.
+   In the same dialog you can also **add new Status or Badge values** (they appear in filters and in the cell dropdown before any row uses them), **rename any value**, **delete a value** (you choose whether its rows become empty or switch to another value) (every row using it is updated; renaming to an existing value merges them) and pick its **colour** (or leave it on Auto). You also set the dashboard title, the field that colours the row bar, and the **summary cards** (each card counts the visible rows where a field contains a value). The app pre-fills a best guess for every column.
 3. **Use the dashboard**:
    - Summary cards show each count with its share of the visible records. Click a card to show only those rows.
    - Breakdown charts show how records split by a field. Click a bar to filter by that value.

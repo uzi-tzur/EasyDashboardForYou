@@ -329,6 +329,7 @@
     mapCtx.colors = JSON.parse(JSON.stringify(src?.colors || {}));
     mapCtx.renames = {}; // { fieldId: { oldValue: newValue } }, applied when the dialog is saved
     mapCtx.added = JSON.parse(JSON.stringify(src?.addedValues || {}));
+    mapCtx.deletes = {}; // { fieldId: { value: replacement ('' = leave empty) } }, applied on save
     mapCtx.accentField = src?.accentField;
     if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
       const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
@@ -412,13 +413,16 @@
   }
 
   // Distinct values of a mapping item, from the imported table or the current rows.
-  function itemDataValues(it) {
+  // value → number of rows using it
+  function itemValueCounts(it) {
     const f = it.field;
     const raw = mapCtx.isNew ? mapCtx.table.rows.map(r => r[it.colIndex]) : rows.map(r => r[f.id]);
-    const set = new Set();
-    raw.forEach(v => (f.type === 'tags' ? splitTags(v) : [String(v ?? '').trim()]).forEach(x => x && set.add(x)));
-    return set;
+    const counts = new Map();
+    raw.forEach(v => (f.type === 'tags' ? splitTags(v) : [String(v ?? '').trim()]).forEach(x => x && counts.set(x, (counts.get(x) || 0) + 1)));
+    return counts;
   }
+
+  const itemDataValues = it => new Set(itemValueCounts(it).keys());
 
   function itemValues(it) {
     const set = itemDataValues(it);
@@ -456,8 +460,31 @@
       };
       const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
       const added = mapCtx.added[f.id] || (mapCtx.added[f.id] = []);
-      const used = itemDataValues(it);
+      const deletes = mapCtx.deletes[f.id] || (mapCtx.deletes[f.id] = {});
+      const counts = itemValueCounts(it);
+      const used = new Set(counts.keys());
+      const shownName = x => renames[x] ?? x;
+
+      // A value marked for deletion: struck through, choose what its rows become, or undo.
+      const deletedRow = v => {
+        const n = counts.get(v) || 0;
+        const others = values.filter(x => x !== v && !(x in deletes));
+        const r = el('div', { class: 'color-row deleted' },
+          el('div', { class: 'color-value' },
+            el('span', { class: 'deleted-name' }, shownName(v)),
+            el('span', { class: 'muted small-text' }, `Will be deleted · ${n} row${n === 1 ? '' : 's'} use it`)),
+          el('div', { class: 'swatches' },
+            el('label', { class: 'replace-label' }, 'Change those rows to',
+              el('select', { onchange: e => { deletes[v] = e.target.value; } },
+                el('option', { value: '', selected: !deletes[v] }, '(leave empty)'),
+                others.map(x => el('option', { value: x, selected: deletes[v] === x }, shownName(x))))),
+            el('button', { type: 'button', class: 'btn small', onclick: () => { delete deletes[v]; list.replaceChild(row(v), r); } }, 'Undo'))
+        );
+        return r;
+      };
+
       const row = v => {
+        if (v in deletes) return deletedRow(v);
         const current = custom[v];
         const name = renames[v] ?? v;
         const preview = el('span', { class: f.type === 'status' ? 'pill status' : 'pill' }, name);
@@ -487,17 +514,22 @@
             })),
             el('label', { class: `swatch custom${current && !COLOR_CHOICES.some(([, h]) => h === current.toLowerCase()) ? ' on' : ''}`, title: 'Custom colour' },
               el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => set(e.target.value) })),
-            used.has(v)
-              ? el('span', { class: 'value-remove placeholder' })
-              : el('button', {
-                type: 'button', class: 'value-remove', title: 'Remove this value (not used by any row)', 'aria-label': `Remove ${v}`,
-                onclick: () => {
-                  mapCtx.added[f.id] = added.filter(x => x !== v);
-                  delete custom[v];
-                  delete renames[v];
-                  renderMapColors();
+            el('button', {
+              type: 'button', class: 'value-remove', 'aria-label': `Delete ${v}`,
+              title: used.has(v) ? 'Delete this value (you choose what its rows become)' : 'Delete this value (not used by any row)',
+              onclick: () => {
+                if (used.has(v)) {
+                  // mark for deletion; rows are only changed when the dialog is saved
+                  deletes[v] = '';
+                  list.replaceChild(deletedRow(v), r);
+                  return;
                 }
-              }, icon('x')))
+                mapCtx.added[f.id] = added.filter(x => x !== v);
+                delete custom[v];
+                delete renames[v];
+                renderMapColors();
+              }
+            }, icon('trash')))
         );
         return r;
       };
@@ -547,7 +579,20 @@
     });
   }
 
+  // Deleting a value = renaming it to its replacement (after that replacement's own rename) or to ''.
+  function combineRenamesAndDeletes(renames, deletes) {
+    const out = {};
+    const fids = new Set([...Object.keys(renames || {}), ...Object.keys(deletes || {})]);
+    for (const fid of fids) {
+      const ren = { ...(renames?.[fid] || {}) };
+      for (const [v, rep] of Object.entries(deletes?.[fid] || {})) ren[v] = rep ? (renames?.[fid]?.[rep] ?? rep) : '';
+      out[fid] = ren;
+    }
+    return out;
+  }
+
   // Rename values everywhere they are used: rows, colours, active filters and exact-match summary cards.
+  // A value renamed to '' is deleted.
   function applyRenames(renames) {
     for (const [fid, map] of Object.entries(renames || {})) {
       if (!Object.keys(map).length) continue;
@@ -556,22 +601,23 @@
       const to = v => map[v] ?? v;
       for (const r of rows) {
         const raw = String(r[fid] ?? '');
-        r[fid] = f.type === 'tags' ? splitTags(raw).map(to).join(', ') : (map[raw.trim()] ?? raw);
+        r[fid] = f.type === 'tags' ? [...new Set(splitTags(raw).map(to).filter(Boolean))].join(', ') : (map[raw.trim()] ?? raw);
       }
       const colors = template.colors?.[fid];
       if (colors) {
         template.colors[fid] = {};
         for (const [v, c] of Object.entries(colors)) {
+          if (!to(v)) continue; // deleted
           // a renamed value's colour wins over an existing value it was merged into
           if (!(to(v) in template.colors[fid]) || map[v]) template.colors[fid][to(v)] = c;
         }
       }
-      if (ui.filters[fid]) ui.filters[fid] = new Set([...ui.filters[fid]].map(to));
-      if (template.addedValues?.[fid]) template.addedValues[fid] = [...new Set(template.addedValues[fid].map(to))];
+      if (ui.filters[fid]) ui.filters[fid] = new Set([...ui.filters[fid]].map(to).filter(Boolean));
+      if (template.addedValues?.[fid]) template.addedValues[fid] = [...new Set(template.addedValues[fid].map(to).filter(Boolean))];
       for (const s of template.stats) {
         if (s.field !== fid) continue;
         const old = Object.keys(map).find(v => v.toLowerCase() === s.value.trim().toLowerCase());
-        if (old) s.value = map[old];
+        if (old && map[old]) s.value = map[old];
       }
     }
   }
@@ -604,7 +650,9 @@
       ui.sort = null;
       $('#search').value = '';
     }
-    applyRenames(mapCtx.renames);
+    // a deleted value's own colour must not carry over to its replacement
+    for (const [fid, d] of Object.entries(mapCtx.deletes)) for (const v of Object.keys(d)) delete template.colors?.[fid]?.[v];
+    applyRenames(combineRenamesAndDeletes(mapCtx.renames, mapCtx.deletes));
     for (const id of Object.keys(ui.filters)) if (!fieldById(id)?.filter) delete ui.filters[id];
     save();
     render();
