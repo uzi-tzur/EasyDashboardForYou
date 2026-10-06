@@ -19,8 +19,8 @@
     ['longtext', 'Long text (wraps)'],
     ['number', 'Number'],
     ['date', 'Date'],
-    ['badge', 'Badge (coloured pill)'],
-    ['tags', 'Tags (multiple pills)'],
+    ['badge', 'Label (coloured)'],
+    ['tags', 'Tags (several labels)'],
     ['status', 'Status']
   ];
   const CATEGORICAL_SLOTS = 8;
@@ -271,7 +271,7 @@
     return { type, filter };
   }
 
-  let mapCtx = null; // { items: [{field, colIndex, sample}], table, workbook, sheet, isNew }
+  let mapCtx = null; // { items: [{field, colIndex, sample}], removed, table, workbook, sheet, isNew, … }
 
   function buildMapItems(table, base) {
     const used = new Set();
@@ -306,10 +306,17 @@
     return items;
   }
 
-  function openMapping({ table, source, workbook, sheet, base } = {}) {
+  function uniqueFieldId(label) {
+    const taken = new Set([...mapCtx.items, ...mapCtx.removed.map(r => r.item)].map(it => it.field.id));
+    let id = slug(label);
+    while (taken.has(id)) id += '_';
+    return id;
+  }
+
+  function openMapping({ table, source, workbook, sheet, base, fresh } = {}) {
     if (table) {
       // reuse the current dashboard's mapping only when the new data looks like the same sheet
-      if (!base && template) {
+      if (!base && !fresh && template) {
         const known = new Set(template.fields.flatMap(f => [norm(f.source), norm(f.label)]));
         const hits = table.headers.filter(h => known.has(norm(h))).length;
         if (hits >= Math.ceil(table.headers.length / 2)) base = template;
@@ -325,7 +332,7 @@
       $('#mapTitle').value = template.title;
     }
     const src = table ? base : template;
-    $('#mapSearchHint').value = src?.searchHint || 'Search…';
+    mapCtx.removed = []; // [{ item, index }] fields removed in this session (restorable until saved)
     mapCtx.stats = (src?.stats || []).map(s => ({ ...s }));
     mapCtx.colors = JSON.parse(JSON.stringify(src?.colors || {}));
     mapCtx.renames = {}; // { fieldId: { oldValue: newValue } }, applied when the dialog is saved
@@ -338,11 +345,20 @@
       const ids = defaultChartIds(mapCtx.items.map(it => it.field), accent);
       mapCtx.items.forEach(it => { it.field.chart = ids.includes(it.field.id); });
     }
+    $('#mapHeading').textContent = mapCtx.isNew ? 'Set up your dashboard' : 'Field mapping';
+    $('#mapSubmit').textContent = mapCtx.isNew ? 'Build dashboard' : 'Save changes';
+    $('#mapError').hidden = true;
     renderSheetPicker();
     renderMapRows();
-    renderMapColors();
-    renderMapStats();
+    setMapTab('fields');
     $('#mappingDialog').showModal();
+  }
+
+  function setMapTab(name) {
+    $$('#mappingDialog .tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+    $$('#mappingDialog .tab-panel').forEach(p => { p.hidden = p.dataset.panel !== name; });
+    if (name === 'values') renderMapColors();
+    if (name === 'cards') { renderMapStats(); refreshFieldSelects(); }
   }
 
   function renderSheetPicker() {
@@ -354,43 +370,86 @@
         try {
           mapCtx.table = sheetToTable(mapCtx.workbook, mapCtx.sheet);
           mapCtx.items = buildMapItems(mapCtx.table, mapCtx.base);
+          mapCtx.removed = [];
           renderMapRows();
-          renderMapColors();
-          renderMapStats();
+          setMapTab('fields');
         } catch (err) { toast(err.message); }
       }
     }, mapCtx.workbook.SheetNames.map(n => el('option', { value: n, selected: n === mapCtx.sheet }, n)));
-    $('#mapTitle').closest('.field').after(el('label', { class: 'field', id: 'sheetPicker' }, 'Sheet (tab)', select));
+    $('#mapTitle').closest('.field').after(el('label', { class: 'field title-field', id: 'sheetPicker' }, 'Sheet (tab)', select));
   }
 
+  // Fields tab: one simple row per dashboard field.
   function renderMapRows() {
-    const tbody = $('#mapRows');
-    tbody.innerHTML = '';
+    const list = $('#mapRows');
+    list.innerHTML = '';
+    const moveField = (idx, dir) => {
+      const j = idx + dir;
+      if (j < 0 || j >= mapCtx.items.length) return;
+      [mapCtx.items[idx], mapCtx.items[j]] = [mapCtx.items[j], mapCtx.items[idx]];
+      renderMapRows();
+      $(`#mapRows .drag-row[data-key="${CSS.escape(mapCtx.items[j].field.id)}"] .field-name`)?.focus();
+    };
     mapCtx.items.forEach((it, idx) => {
       const f = it.field;
-      const tr = el('tr', { class: f.show ? '' : 'off' },
-        el('td', {}, el('input', { type: 'checkbox', checked: f.show, onchange: e => { f.show = e.target.checked; tr.className = f.show ? '' : 'off'; } })),
-        el('td', {},
-          el('button', { type: 'button', class: 'move', title: 'Move up', onclick: () => moveItem(idx, -1) }, '↑'),
-          el('button', { type: 'button', class: 'move', title: 'Move down', onclick: () => moveItem(idx, 1) }, '↓')),
-        el('td', {}, f.source),
-        el('td', {}, el('input', { type: 'text', value: f.label, oninput: e => { f.label = e.target.value; refreshFieldSelects(); } })),
-        el('td', {}, el('select', { onchange: e => { f.type = e.target.value; renderMapColors(); } },
-          TYPES.map(([v, l]) => el('option', { value: v, selected: v === f.type }, l)))),
-        el('td', {}, el('input', { type: 'checkbox', checked: f.filter, onchange: e => { f.filter = e.target.checked; } })),
-        el('td', {}, el('input', { type: 'checkbox', checked: !!f.chart, title: 'Show a breakdown chart for this field', onchange: e => { f.chart = e.target.checked; } })),
-        el('td', { class: 'sample', title: it.sample }, it.sample)
-      );
-      tbody.append(tr);
+      const hint = [f.source && f.source !== f.label ? `From column “${f.source}”` : '', it.sample ? `e.g. ${it.sample}` : '']
+        .filter(Boolean).join(' · ');
+      const toggle = (label, key, title) => el('label', { class: 'toggle', title },
+        el('input', { type: 'checkbox', checked: !!f[key], onchange: e => { f[key] = e.target.checked; } }), label);
+      list.append(el('div', { class: 'field-row drag-row', 'data-key': f.id },
+        el('span', { class: 'drag-handle', title: 'Drag to reorder (or Alt+↑/↓)', 'aria-hidden': 'true' }, '⋮⋮'),
+        el('input', {
+          type: 'text', class: 'field-name', value: f.label, placeholder: 'Field name', title: hint || 'Field name',
+          'aria-label': 'Field name',
+          oninput: e => { f.label = e.target.value; },
+          onkeydown: e => {
+            if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); moveField(idx, e.key === 'ArrowUp' ? -1 : 1); }
+          }
+        }),
+        el('select', { class: 'field-type', 'aria-label': 'Shown as', onchange: e => { f.type = e.target.value; } },
+          TYPES.map(([v, l]) => el('option', { value: v, selected: v === f.type }, l))),
+        el('span', { class: 'field-opts' },
+          toggle('Filter', 'filter', 'Show a filter for this field above the table'),
+          toggle('Chart', 'chart', 'Show a breakdown chart for this field')),
+        el('button', {
+          type: 'button', class: 'icon-btn danger', title: 'Remove this field from the dashboard', 'aria-label': `Remove ${f.label || 'field'}`,
+          onclick: () => { mapCtx.removed.push({ item: it, index: idx }); mapCtx.items.splice(idx, 1); renderMapRows(); }
+        }, icon('trash'))
+      ));
     });
-    refreshFieldSelects();
+    enableDragSort(list, keys => {
+      const byId = new Map(mapCtx.items.map(it => [it.field.id, it]));
+      mapCtx.items = keys.map(k => byId.get(k)).filter(Boolean);
+      renderMapRows();
+    });
+    if (!mapCtx.items.length) list.append(el('p', { class: 'muted pad' }, 'No fields yet. Click “Add field”.'));
+
+    // removed fields can be restored until the dialog is saved
+    const removed = $('#mapRemoved');
+    removed.innerHTML = '';
+    removed.hidden = !mapCtx.removed.length;
+    if (mapCtx.removed.length) {
+      removed.append(el('span', { class: 'muted small-text' }, 'Removed:'),
+        ...mapCtx.removed.map((r, i) => el('button', {
+          type: 'button', class: 'af-chip', title: 'Restore this field',
+          onclick: () => {
+            mapCtx.removed.splice(i, 1);
+            mapCtx.items.splice(Math.min(r.index, mapCtx.items.length), 0, r.item);
+            renderMapRows();
+          }
+        }, r.item.field.label || r.item.field.source, el('span', { class: 'k' }, '↺ restore'))));
+    }
   }
 
-  function moveItem(idx, dir) {
-    const j = idx + dir;
-    if (j < 0 || j >= mapCtx.items.length) return;
-    [mapCtx.items[idx], mapCtx.items[j]] = [mapCtx.items[j], mapCtx.items[idx]];
+  function addField() {
+    const label = 'New field';
+    const it = { field: { id: uniqueFieldId(label), source: '', label, type: 'text', show: true, filter: false, chart: false }, sample: '' };
+    mapCtx.items.push(it);
+    $('#mapError').hidden = true;
     renderMapRows();
+    const input = $(`#mapRows .drag-row[data-key="${CSS.escape(it.field.id)}"] .field-name`);
+    input?.focus();
+    input?.select();
   }
 
   function fieldOptions(selected, { allowNone } = {}) {
@@ -407,14 +466,8 @@
     accent.innerHTML = '';
     accent.append(...fieldOptions(mapCtx.accentField, { allowNone: true }));
     accent.onchange = e => { mapCtx.accentField = e.target.value; };
-    $$('#mapStats select').forEach((s, i) => {
-      if (!mapCtx.stats[i]) return;
-      s.innerHTML = '';
-      s.append(...fieldOptions(mapCtx.stats[i].field));
-    });
   }
 
-  // Distinct values of a mapping item, from the imported table or the current rows.
   // value → number of rows using it
   function itemValueCounts(it) {
     const f = it.field;
@@ -424,12 +477,10 @@
     return counts;
   }
 
-  const itemDataValues = it => new Set(itemValueCounts(it).keys());
-
   function itemValues(it) {
-    const set = itemDataValues(it);
+    const set = new Set(itemValueCounts(it).keys());
     (mapCtx.added[it.field.id] || []).forEach(v => set.add(v));
-    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return [...set].sort(byName);
   }
 
   function resolveCssColor(value) {
@@ -440,180 +491,181 @@
     return '#' + rgb.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
   }
 
+  // Values tab: one compact line per value (drag · colour dot · name · rows · delete).
   function renderMapColors() {
     const box = $('#mapColors');
     box.innerHTML = '';
     const items = mapCtx.items.filter(it => it.field.type === 'status' || it.field.type === 'badge')
       .sort((a, b) => (b.field.type === 'status') - (a.field.type === 'status'));
     if (!items.length) {
-      box.append(el('p', { class: 'muted' }, 'No Status or Badge fields yet. Set a field’s “Display as” to Status or Badge to colour its values.'));
+      box.append(el('div', { class: 'empty-note' },
+        el('b', {}, 'Nothing to set up here yet.'),
+        el('span', {}, 'In the Fields tab, set a field to “Status” or “Label” (for example Status, Major or Grade) and its values will appear here.')));
       return;
     }
-    for (const it of items) {
-      const f = it.field;
-      const values = itemValues(it);
-      const custom = mapCtx.colors[f.id] || (mapCtx.colors[f.id] = {});
-      const list = el('div', { class: 'color-list' });
-      const auto = v => {
-        // preview what Auto would give without the override
-        if (f.type === 'status') return `var(--s-${statusRole(v)})`;
-        const i = values.indexOf(v);
-        return i < CATEGORICAL_SLOTS ? `var(--c${i + 1})` : 'var(--c-neutral)';
-      };
-      const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
-      const added = mapCtx.added[f.id] || (mapCtx.added[f.id] = []);
-      // current order: the custom order (if any), then remaining values alphabetically
-      const custom_order = mapCtx.order[f.id];
-      const ordered = custom_order?.length
-        ? [...custom_order.filter(v => values.includes(v)), ...values.filter(v => !custom_order.includes(v))]
-        : values;
-      const move = (v, dir) => {
-        const arr = [...ordered];
-        const i = arr.indexOf(v), j = i + dir;
-        if (i < 0 || j < 0 || j >= arr.length) return;
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-        mapCtx.order[f.id] = arr;
-        renderMapColors();
-        // keep keyboard focus on the moved value (on the other arrow once it reaches the top/bottom)
-        const moved = $(`#mapColors .color-field[data-field="${CSS.escape(f.id)}"] .color-row[data-value="${CSS.escape(v)}"]`);
-        const same = moved?.querySelector(`.move-${dir < 0 ? 'up' : 'down'}`);
-        (same && !same.disabled ? same : moved?.querySelector(`.move-${dir < 0 ? 'down' : 'up'}`))?.focus();
-      };
-      const reorder = v => {
-        const i = ordered.indexOf(v);
-        return el('span', { class: 'reorder' },
-          el('span', { class: 'drag-handle', title: 'Drag to reorder', 'aria-hidden': 'true' }, '⋮⋮'),
-          el('button', { type: 'button', class: 'move move-up', title: 'Move up', 'aria-label': `Move ${v} up`, disabled: i <= 0, onclick: () => move(v, -1) }, '↑'),
-          el('button', { type: 'button', class: 'move move-down', title: 'Move down', 'aria-label': `Move ${v} down`, disabled: i >= ordered.length - 1, onclick: () => move(v, 1) }, '↓'));
-      };
-      const deletes = mapCtx.deletes[f.id] || (mapCtx.deletes[f.id] = {});
-      const counts = itemValueCounts(it);
-      const used = new Set(counts.keys());
-      const shownName = x => renames[x] ?? x;
+    for (const it of items) renderValueField(box, it);
+  }
 
-      // A value marked for deletion: struck through, choose what its rows become, or undo.
-      const deletedRow = v => {
-        const n = counts.get(v) || 0;
-        const others = values.filter(x => x !== v && !(x in deletes));
-        const r = el('div', { class: 'color-row deleted', 'data-value': v },
-          el('div', { class: 'color-value' },
-            el('span', { class: 'deleted-name' }, shownName(v)),
-            el('span', { class: 'muted small-text' }, `Will be deleted · ${n} row${n === 1 ? '' : 's'} use it`)),
-          el('div', { class: 'swatches' },
-            el('label', { class: 'replace-label' }, 'Change those rows to',
-              el('select', { onchange: e => { deletes[v] = e.target.value; } },
-                el('option', { value: '', selected: !deletes[v] }, '(leave empty)'),
-                others.map(x => el('option', { value: x, selected: deletes[v] === x }, shownName(x))))),
-            el('button', { type: 'button', class: 'btn small', onclick: () => { delete deletes[v]; list.replaceChild(row(v), r); } }, 'Undo'))
-        );
-        return r;
-      };
+  function renderValueField(box, it) {
+    const f = it.field;
+    const values = itemValues(it);
+    const custom = mapCtx.colors[f.id] || (mapCtx.colors[f.id] = {});
+    const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
+    const added = mapCtx.added[f.id] || (mapCtx.added[f.id] = []);
+    const deletes = mapCtx.deletes[f.id] || (mapCtx.deletes[f.id] = {});
+    const counts = itemValueCounts(it);
+    const shownName = x => renames[x] ?? x;
+    const customOrder = mapCtx.order[f.id];
+    const ordered = customOrder?.length
+      ? [...customOrder.filter(v => values.includes(v)), ...values.filter(v => !customOrder.includes(v))]
+      : values;
+    const auto = v => {
+      if (f.type === 'status') return `var(--s-${statusRole(v)})`;
+      const i = values.indexOf(v);
+      return i < CATEGORICAL_SLOTS ? `var(--c${i + 1})` : 'var(--c-neutral)';
+    };
+    const list = el('div', { class: 'value-list' });
+    const rerender = (focusValue, selector = '.value-name') => {
+      const old = $(`#mapColors .value-field[data-field="${CSS.escape(f.id)}"]`);
+      if (!old) return;
+      const tmp = el('div');
+      renderValueField(tmp, it);
+      old.replaceWith(tmp.firstChild);
+      if (focusValue != null) $(`#mapColors .value-field[data-field="${CSS.escape(f.id)}"] .drag-row[data-key="${CSS.escape(focusValue)}"] ${selector}`)?.focus();
+    };
+    const move = (v, dir) => {
+      const arr = [...ordered];
+      const i = arr.indexOf(v), j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      mapCtx.order[f.id] = arr;
+      rerender(v);
+    };
 
-      const row = v => {
-        if (v in deletes) return deletedRow(v);
-        const current = custom[v];
-        const name = renames[v] ?? v;
-        const preview = el('span', { class: f.type === 'status' ? 'pill status' : 'pill' }, name);
-        preview.style.setProperty('--k', current || auto(v));
-        const rename = el('input', {
-          type: 'text', class: `rename${renames[v] ? ' changed' : ''}`, value: name,
-          'aria-label': `Rename “${v}”`, title: renames[v] ? `Was: ${v}` : 'Type to rename this value in every row',
+    const deletedRow = v => {
+      const n = counts.get(v) || 0;
+      const others = values.filter(x => x !== v && !(x in deletes));
+      return el('div', { class: 'value-row deleted drag-row', 'data-key': v },
+        el('span', { class: 'drag-handle', 'aria-hidden': 'true' }, '⋮⋮'),
+        el('span', { class: 'deleted-name' }, shownName(v)),
+        el('label', { class: 'replace-label' }, `${n} row${n === 1 ? '' : 's'} → `,
+          el('select', { onchange: e => { deletes[v] = e.target.value; } },
+            el('option', { value: '', selected: !deletes[v] }, '(leave empty)'),
+            others.map(x => el('option', { value: x, selected: deletes[v] === x }, shownName(x))))),
+        el('button', { type: 'button', class: 'btn small', onclick: () => { delete deletes[v]; rerender(v); } }, 'Undo'));
+    };
+
+    const row = v => {
+      if (v in deletes) return deletedRow(v);
+      const current = custom[v];
+      const n = counts.get(v) || 0;
+      const palette = el('div', { class: 'palette', hidden: true },
+        el('button', { type: 'button', class: `swatch auto${current ? '' : ' on'}`, onclick: () => setColor(null) }, 'Auto'),
+        COLOR_CHOICES.map(([name, hex]) => el('button', {
+          type: 'button', class: `swatch${current?.toLowerCase() === hex ? ' on' : ''}`, title: name, 'aria-label': name,
+          style: `--sw:${hex}`, onclick: () => setColor(hex)
+        })),
+        el('label', { class: `swatch custom${current && !COLOR_CHOICES.some(([, h]) => h === current.toLowerCase()) ? ' on' : ''}`, title: 'Any colour' },
+          el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => setColor(e.target.value) })));
+      const setColor = color => {
+        if (color) custom[v] = color; else delete custom[v];
+        rerender(v, '.color-dot');
+      };
+      const dot = el('button', {
+        type: 'button', class: `color-dot${f.type === 'status' ? ' status' : ''}`, style: `--k:${current || auto(v)}`,
+        title: 'Change colour', 'aria-label': `Change colour of ${shownName(v)}`, 'aria-expanded': 'false',
+        onclick: () => { palette.hidden = !palette.hidden; dot.setAttribute('aria-expanded', String(!palette.hidden)); }
+      });
+      return el('div', { class: 'value-row drag-row', 'data-key': v },
+        el('span', { class: 'drag-handle', title: 'Drag to reorder (or Alt+↑/↓)', 'aria-hidden': 'true' }, '⋮⋮'),
+        dot,
+        el('input', {
+          type: 'text', class: `value-name${renames[v] ? ' changed' : ''}`, value: shownName(v), 'aria-label': `Rename ${v}`,
+          title: renames[v] ? `Renamed from “${v}”` : 'Type to rename',
           oninput: e => {
             const nv = e.target.value.trim();
             if (nv && nv !== v) renames[v] = nv; else delete renames[v];
-            preview.textContent = nv || v;
             e.target.classList.toggle('changed', !!renames[v]);
-            e.target.title = renames[v] ? `Was: ${v}` : 'Type to rename this value in every row';
+            e.target.title = renames[v] ? `Renamed from “${v}”` : 'Type to rename';
+          },
+          onkeydown: e => {
+            if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(v, e.key === 'ArrowUp' ? -1 : 1); }
           }
-        });
-        const set = color => {
-          if (color) custom[v] = color; else delete custom[v];
-          list.replaceChild(row(v), r);
-        };
-        const r = el('div', { class: 'color-row', 'data-value': v },
-          el('div', { class: 'color-value' }, reorder(v), rename, preview),
-          el('div', { class: 'swatches' },
-            el('button', { type: 'button', class: `swatch auto${current ? '' : ' on'}`, title: 'Auto', onclick: () => set(null) }, 'Auto'),
-            COLOR_CHOICES.map(([name, hex]) => el('button', {
-              type: 'button', class: `swatch${current?.toLowerCase() === hex ? ' on' : ''}`, title: name,
-              'aria-label': name, style: `--sw:${hex}`, onclick: () => set(hex)
-            })),
-            el('label', { class: `swatch custom${current && !COLOR_CHOICES.some(([, h]) => h === current.toLowerCase()) ? ' on' : ''}`, title: 'Custom colour' },
-              el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => set(e.target.value) })),
-            el('button', {
-              type: 'button', class: 'value-remove', 'aria-label': `Delete ${v}`,
-              title: used.has(v) ? 'Delete this value (you choose what its rows become)' : 'Delete this value (not used by any row)',
-              onclick: () => {
-                if (used.has(v)) {
-                  // mark for deletion; rows are only changed when the dialog is saved
-                  deletes[v] = '';
-                  list.replaceChild(deletedRow(v), r);
-                  return;
-                }
-                mapCtx.added[f.id] = added.filter(x => x !== v);
-                delete custom[v];
-                delete renames[v];
-                renderMapColors();
-              }
-            }, icon('trash')))
-        );
-        return r;
-      };
-      ordered.slice(0, 40).forEach(v => list.append(row(v)));
-      enableDragSort(list, f.id);
-      const more = values.length > 40 ? el('p', { class: 'muted small-text' }, `Showing the first 40 of ${values.length} values.`) : null;
+        }),
+        el('span', { class: 'value-count' }, n ? `${n} row${n === 1 ? '' : 's'}` : 'unused'),
+        el('button', {
+          type: 'button', class: 'icon-btn danger', 'aria-label': `Delete ${shownName(v)}`,
+          title: n ? 'Delete this value (you choose what its rows become)' : 'Delete this value',
+          onclick: () => {
+            if (n) { deletes[v] = ''; rerender(); return; }
+            mapCtx.added[f.id] = added.filter(x => x !== v);
+            delete custom[v];
+            delete renames[v];
+            rerender();
+          }
+        }, icon('trash')),
+        palette);
+    };
 
-      const newInput = el('input', { type: 'text', class: 'rename', placeholder: `New ${(f.label || f.source).toLowerCase()} value…`, 'data-add-for': f.id });
-      const addValue = () => {
-        const nv = newInput.value.trim();
-        if (!nv) return;
-        const exists = values.find(x => x.toLowerCase() === nv.toLowerCase()) ||
-          Object.values(renames).find(x => x.toLowerCase() === nv.toLowerCase());
-        if (exists) { addMsg.textContent = `“${exists}” already exists.`; addMsg.hidden = false; return; }
-        added.push(nv);
-        if (mapCtx.order[f.id]?.length) mapCtx.order[f.id].push(nv);
-        renderMapColors();
-        $(`#mapColors input[data-add-for="${CSS.escape(f.id)}"]`)?.focus();
-      };
-      const addMsg = el('span', { class: 'error small-text', hidden: true });
-      newInput.addEventListener('input', () => { addMsg.hidden = true; });
-      newInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addValue(); } });
-      const addRowEl = el('div', { class: 'color-row add-value' },
-        el('div', { class: 'color-value' }, newInput,
-          el('button', { type: 'button', class: 'btn small', onclick: addValue }, icon('plus'), 'Add value'), addMsg));
+    ordered.slice(0, 60).forEach(v => list.append(row(v)));
+    enableDragSort(list, keys => {
+      const prev = mapCtx.order[f.id] || [];
+      mapCtx.order[f.id] = [...keys, ...ordered.filter(v => !keys.includes(v)), ...prev.filter(v => !keys.includes(v) && !ordered.includes(v))];
+      rerender();
+    });
 
-      box.append(el('div', { class: 'color-field', 'data-field': f.id },
-        el('div', { class: 'color-field-head' }, el('b', {}, f.label || f.source), el('span', { class: 'muted' }, f.type === 'status' ? 'Status' : 'Badge'),
-          el('span', { class: 'spacer' }),
-          custom_order?.length
-            ? el('button', { type: 'button', class: 'link', title: 'Reset to alphabetical order', onclick: () => { delete mapCtx.order[f.id]; renderMapColors(); } }, 'Reset order (A–Z)')
-            : el('span', { class: 'muted small-text' }, 'A–Z · use ↑↓ or drag to reorder'),
-          el('span', { class: 'muted' }, `${values.length} value${values.length === 1 ? '' : 's'}`)),
-        values.length ? list : el('p', { class: 'muted small-text pad' }, 'No values yet. Add one below.'), more, addRowEl));
-    }
+    const newInput = el('input', { type: 'text', class: 'value-name', placeholder: `Add a ${(f.label || 'value').toLowerCase()} value…`, 'data-add-for': f.id });
+    const addMsg = el('span', { class: 'error small-text', hidden: true });
+    const addValue = () => {
+      const nv = newInput.value.trim();
+      if (!nv) return;
+      const exists = values.find(x => x.toLowerCase() === nv.toLowerCase()) ||
+        Object.values(renames).find(x => x.toLowerCase() === nv.toLowerCase());
+      if (exists) { addMsg.textContent = `“${exists}” already exists.`; addMsg.hidden = false; return; }
+      added.push(nv);
+      if (mapCtx.order[f.id]?.length) mapCtx.order[f.id].push(nv);
+      rerender();
+      $(`#mapColors input[data-add-for="${CSS.escape(f.id)}"]`)?.focus();
+    };
+    newInput.addEventListener('input', () => { addMsg.hidden = true; });
+    newInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addValue(); } });
+
+    box.append(el('div', { class: 'value-field', 'data-field': f.id },
+      el('div', { class: 'value-field-head' },
+        el('b', {}, f.label || f.source),
+        el('span', { class: 'type-tag' }, f.type === 'status' ? 'Status' : 'Label'),
+        el('span', { class: 'spacer' }),
+        customOrder?.length
+          ? el('button', { type: 'button', class: 'link', onclick: () => { delete mapCtx.order[f.id]; rerender(); } }, 'Sort A–Z')
+          : null),
+      values.length ? list : null,
+      values.length > 60 ? el('p', { class: 'muted small-text pad' }, `Showing the first 60 of ${values.length} values.`) : null,
+      el('div', { class: 'value-row add-value' },
+        el('span', { class: 'add-icon' }, icon('plus')), newInput,
+        el('button', { type: 'button', class: 'btn small', onclick: addValue }, 'Add'), addMsg)));
   }
 
-  // Drag rows by their handle to reorder values within one field.
-  function enableDragSort(list, fieldId) {
+  // Drag rows by their handle to reorder them; onDrop receives the new order of data-key values.
+  function enableDragSort(list, onDrop) {
     let dragging = null;
     list.addEventListener('pointerdown', e => {
-      const row = e.target.closest('.drag-handle')?.closest('.color-row');
+      const row = e.target.closest('.drag-handle')?.closest('.drag-row');
       if (row) row.draggable = true;
     });
     list.addEventListener('pointerup', () => {
-      if (!dragging) list.querySelectorAll('.color-row[draggable="true"]').forEach(r => { r.draggable = false; });
+      if (!dragging) list.querySelectorAll('.drag-row[draggable="true"]').forEach(r => { r.draggable = false; });
     });
     list.addEventListener('dragstart', e => {
-      dragging = e.target.closest('.color-row');
+      dragging = e.target.closest('.drag-row');
       if (!dragging) return;
       dragging.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', dragging.dataset.value);
+      e.dataTransfer.setData('text/plain', dragging.dataset.key);
     });
     list.addEventListener('dragover', e => {
       if (!dragging) return;
       e.preventDefault();
-      const over = e.target.closest('.color-row');
+      const over = e.target.closest('.drag-row');
       if (!over || over === dragging || over.parentNode !== list) return;
       const before = e.clientY < over.getBoundingClientRect().top + over.offsetHeight / 2;
       list.insertBefore(dragging, before ? over : over.nextSibling);
@@ -623,11 +675,7 @@
       dragging.classList.remove('dragging');
       dragging.draggable = false;
       dragging = null;
-      const shown = [...list.querySelectorAll('.color-row[data-value]')].map(r => r.dataset.value);
-      const prev = mapCtx.order[fieldId] || [];
-      // values beyond the first 40 shown keep their relative order after the visible ones
-      mapCtx.order[fieldId] = [...shown, ...prev.filter(v => !shown.includes(v))];
-      renderMapColors();
+      onDrop([...list.querySelectorAll('.drag-row[data-key]')].map(r => r.dataset.key));
     });
   }
 
@@ -635,14 +683,16 @@
     const box = $('#mapStats');
     box.innerHTML = '';
     mapCtx.stats = mapCtx.stats.filter(s => mapCtx.items.some(it => it.field.id === s.field) || !s.field);
+    if (!mapCtx.stats.length) box.append(el('p', { class: 'muted small-text' }, 'No extra cards yet.'));
     mapCtx.stats.forEach((s, i) => {
       if (!s.field) s.field = mapCtx.items[0]?.field.id;
       box.append(el('div', { class: 'stat-row' },
-        el('input', { type: 'text', placeholder: 'Card label', value: s.label, oninput: e => { s.label = e.target.value; } }),
+        el('input', { type: 'text', placeholder: 'Card name, e.g. Honors students', value: s.label, oninput: e => { s.label = e.target.value; } }),
+        el('span', { class: 'muted' }, 'counts rows where'),
         el('select', { onchange: e => { s.field = e.target.value; } }, fieldOptions(s.field)),
         el('span', { class: 'muted' }, 'contains'),
         el('input', { type: 'text', placeholder: 'Value', value: s.value, oninput: e => { s.value = e.target.value; } }),
-        el('button', { type: 'button', class: 'btn small danger', onclick: () => { mapCtx.stats.splice(i, 1); renderMapStats(); } }, 'Remove')
+        el('button', { type: 'button', class: 'icon-btn danger', title: 'Remove card', 'aria-label': 'Remove card', onclick: () => { mapCtx.stats.splice(i, 1); renderMapStats(); } }, icon('trash'))
       ));
     });
   }
@@ -692,14 +742,15 @@
   }
 
   function applyMapping() {
-    const fields = mapCtx.items.map(it => ({ ...it.field, label: it.field.label.trim() || it.field.source }));
+    const fields = mapCtx.items.map((it, i) => ({ ...it.field, show: true, label: it.field.label.trim() || it.field.source || `Field ${i + 1}` }));
+    const searchable = fields.filter(f => ['text', 'longtext', 'badge', 'status'].includes(f.type)).slice(0, 3).map(f => f.label.toLowerCase());
     const previous = template;
     template = {
       title: $('#mapTitle').value.trim() || 'My Dashboard',
-      searchHint: $('#mapSearchHint').value.trim() || 'Search…',
-      accentField: mapCtx.accentField || '',
+      searchHint: searchable.length ? `Search ${searchable.join(', ')}…` : 'Search…',
+      accentField: fields.some(f => f.id === mapCtx.accentField) ? mapCtx.accentField : (fields.find(f => f.type === 'status')?.id || ''),
       fields,
-      stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim()),
+      stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim() && fields.some(f => f.id === s.field)),
       colors: Object.fromEntries(Object.entries(mapCtx.colors)
         .filter(([id, map]) => fields.some(f => f.id === id) && Object.keys(map).length)),
       addedValues: Object.fromEntries(Object.entries(mapCtx.added)
@@ -713,13 +764,21 @@
       nextId = 1;
       rows = mapCtx.table.rows.map(r => {
         const row = { _id: nextId++ };
-        mapCtx.items.forEach(it => { row[it.field.id] = r[it.colIndex] ?? ''; });
+        mapCtx.items.forEach(it => { row[it.field.id] = it.colIndex == null ? '' : (r[it.colIndex] ?? ''); });
         return row;
       });
       ui.filters = {};
       ui.search = '';
       ui.sort = null;
       $('#search').value = '';
+    } else {
+      // drop data of removed fields; new fields start empty
+      const keep = new Set(fields.map(f => f.id));
+      for (const r of rows) {
+        for (const k of Object.keys(r)) if (k !== '_id' && !keep.has(k)) delete r[k];
+        for (const f of fields) if (!(f.id in r)) r[f.id] = '';
+      }
+      if (ui.sort && !keep.has(ui.sort.field)) ui.sort = null;
     }
     // a deleted value's own colour must not carry over to its replacement
     for (const [fid, d] of Object.entries(mapCtx.deletes)) for (const v of Object.keys(d)) delete template.colors?.[fid]?.[v];
@@ -727,7 +786,7 @@
     for (const id of Object.keys(ui.filters)) if (!fieldById(id)?.filter) delete ui.filters[id];
     save();
     render();
-    toast(mapCtx.isNew ? `Dashboard built with ${rows.length} rows.` : 'Field mapping updated.');
+    toast(mapCtx.isNew ? (rows.length ? `Dashboard built with ${rows.length} rows.` : 'Dashboard ready. Click “Add row” to add your first record.') : 'Changes saved.');
   }
 
   /* ---------- filtering / sorting ---------- */
@@ -1371,6 +1430,11 @@
     'import-gsheet': () => { $('#gsheetError').hidden = true; $('#gsheetDialog').showModal(); },
     'import-paste': () => { $('#pasteText').value = ''; $('#pasteDialog').showModal(); },
     'load-template': () => $('#templateInput').click(),
+    'new-blank': () => openMapping({
+      table: { headers: ['Name', 'Status'], rows: [] },
+      source: 'My',
+      fresh: true
+    }),
     'load-sample': () => openMapping({
       table: { headers: SAMPLE.headers, rows: SAMPLE.rows.map(r => [...r]) },
       base: SAMPLE.template,
@@ -1446,7 +1510,19 @@
   });
 
   // Mapping dialog
-  $('#mappingForm').addEventListener('submit', applyMapping);
+  $('#mappingForm').addEventListener('submit', e => {
+    e.preventDefault();
+    if (!mapCtx.items.length) {
+      setMapTab('fields');
+      $('#mapError').textContent = 'Add at least one field.';
+      $('#mapError').hidden = false;
+      return;
+    }
+    applyMapping();
+    $('#mappingDialog').close();
+  });
+  $$('#mappingDialog .tab').forEach(t => t.addEventListener('click', () => setMapTab(t.dataset.tab)));
+  $('#addField').addEventListener('click', addField);
   $('#mapCancel').addEventListener('click', () => $('#mappingDialog').close());
   $('#addStat').addEventListener('click', () => {
     mapCtx.stats.push({ label: '', field: mapCtx.accentField || mapCtx.items[0]?.field.id, value: '' });

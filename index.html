@@ -53,6 +53,7 @@
           <hr>
           <div class="menu-label">Setup</div>
           <button data-action="load-template"><svg class="i"><use href="#i-layers"/></svg>Load template (.json)…</button>
+          <button data-action="new-blank"><svg class="i"><use href="#i-plus"/></svg>Start from scratch</button>
           <button data-action="load-sample"><svg class="i"><use href="#i-zap"/></svg>Load sample: Release Tracking</button>
         </div>
       </div>
@@ -84,6 +85,7 @@
         <button class="btn primary" data-action="import-file">Import Excel / CSV</button>
         <button class="btn" data-action="import-gsheet">Google Sheet link</button>
         <button class="btn" data-action="import-paste">Paste data</button>
+        <button class="btn" data-action="new-blank">Start from scratch</button>
         <button class="btn" data-action="load-sample">Try the sample</button>
       </div>
       <p class="hint">Tip: you can also drag &amp; drop a file anywhere on this page.</p>
@@ -123,40 +125,50 @@
     </section>
   </main>
 
-  <!-- Field mapping dialog -->
-  <dialog id="mappingDialog" class="dialog wide">
-    <form method="dialog" id="mappingForm">
-      <h2>Field mapping</h2>
-      <p class="muted">Choose which source columns appear on the dashboard, what they are called, and how they are displayed.</p>
-      <label class="field">Dashboard title
-        <input id="mapTitle" type="text" required>
-      </label>
-      <div class="table-wrap small">
-        <table class="map-table">
-          <thead>
-            <tr><th>Show</th><th></th><th>Source column</th><th>Dashboard field name</th><th>Display as</th><th>Filter</th><th>Chart</th><th>Sample</th></tr>
-          </thead>
-          <tbody id="mapRows"></tbody>
-        </table>
+  <!-- Dashboard setup dialog (field mapping) -->
+  <dialog id="mappingDialog" class="dialog wide setup">
+    <form id="mappingForm" novalidate>
+      <div class="setup-head">
+        <h2 id="mapHeading">Set up your dashboard</h2>
+        <label class="field title-field">Dashboard title
+          <input id="mapTitle" type="text" placeholder="e.g. Students 2026">
+        </label>
       </div>
-      <div class="map-grid">
-        <label class="field">Row colour bar follows
+
+      <nav class="tabs" role="tablist" aria-label="Setup steps">
+        <button type="button" role="tab" class="tab" data-tab="fields" aria-selected="true"><span class="tab-num">1</span>Fields</button>
+        <button type="button" role="tab" class="tab" data-tab="values" aria-selected="false"><span class="tab-num">2</span>Values &amp; colours</button>
+        <button type="button" role="tab" class="tab" data-tab="cards" aria-selected="false"><span class="tab-num">3</span>Summary cards</button>
+      </nav>
+
+      <section class="tab-panel" data-panel="fields" role="tabpanel">
+        <p class="muted">These are the columns of your dashboard. Rename them, choose how each one looks, drag to reorder, and remove any you don't need.</p>
+        <div class="field-list-head" aria-hidden="true">
+          <span></span><span>Field name</span><span>Shown as</span><span>Options</span><span></span>
+        </div>
+        <div id="mapRows" class="field-list"></div>
+        <div id="mapRemoved" class="removed-fields" hidden></div>
+        <button type="button" class="btn small" id="addField"><svg class="i"><use href="#i-plus"/></svg>Add field</button>
+        <p id="mapError" class="error" hidden></p>
+      </section>
+
+      <section class="tab-panel" data-panel="values" role="tabpanel" hidden>
+        <p class="muted">Values of your <b>Status</b> and <b>Label</b> fields. Type to rename, click the dot to change colour, drag to reorder, or add and delete values. Row changes apply when you save.</p>
+        <div id="mapColors" class="map-colors"></div>
+      </section>
+
+      <section class="tab-panel" data-panel="cards" role="tabpanel" hidden>
+        <p class="muted">“Total records” is always shown. Each card counts the rows where a field contains a value.</p>
+        <div id="mapStats"></div>
+        <button type="button" class="btn small" id="addStat"><svg class="i"><use href="#i-plus"/></svg>Add card</button>
+        <label class="field narrow">Colour bar at the left of each row follows
           <select id="mapAccent"></select>
         </label>
-        <label class="field">Search placeholder
-          <input id="mapSearchHint" type="text">
-        </label>
-      </div>
-      <h3>Status &amp; badge values</h3>
-      <p class="muted"><b>Add</b> new values, <b>rename</b> a value by typing in its box, <b>delete</b> one with the bin (you choose what its rows become), <b>reorder</b> with ↑↓ or by dragging, and pick its <b>colour</b> or leave it on Auto. Changes to rows apply when you click Build dashboard. Auto colours statuses by meaning (approved = green, pending/review = amber, blocked = red).</p>
-      <div id="mapColors" class="map-colors"></div>
-      <h3>Summary cards</h3>
-      <p class="muted">“Visible records” is always shown. Add cards that count rows where a field contains a value.</p>
-      <div id="mapStats"></div>
-      <button type="button" class="btn small" id="addStat">+ Add card</button>
+      </section>
+
       <div class="dialog-actions">
-        <button type="button" class="btn" value="cancel" id="mapCancel">Cancel</button>
-        <button type="submit" class="btn primary" value="ok">Build dashboard</button>
+        <button type="button" class="btn" id="mapCancel">Cancel</button>
+        <button type="submit" class="btn primary" id="mapSubmit">Build dashboard</button>
       </div>
     </form>
   </dialog>

@@ -22,14 +22,14 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - an Excel / CSV file (you can also drag and drop it onto the page),
    - a Google Sheet link (the sheet must be shared as *Anyone with the link can view*; the tab in the link's `gid` is the one imported),
    - cells pasted from Excel or Google Sheets.
-2. **Field mapping**: for each source column, choose:
-   - whether to show it,
-   - its display name and column order,
-   - how it is displayed: *Text, Long text, Number, Date, Badge, Tags (comma-separated pills), Status*,
-   - whether it gets a filter,
-   - whether it gets a breakdown chart.
+2. **Field mapping** (also opens when you import or click *Start from scratch*). It has three tabs:
+   - **Fields**: the columns of your dashboard. Rename them, choose how each is shown (*Text, Long text, Number, Date, Label, Tags, Status*), switch on a **Filter** or **Chart**, drag to reorder, remove fields you don't need (restorable until you save), or **Add field**.
+   - **Values & colours**: for each Status or Label field, one line per value. Type to rename it, click the dot to change its colour, drag to reorder, add new values, or delete one (you choose what its rows become).
+   - **Summary cards**: cards that count rows where a field contains a value, plus which field colours the bar at the left of each row.
 
-   In the same dialog you can also **add new Status or Badge values** (they appear in filters and in the cell dropdown before any row uses them), **rename any value**, **delete a value** (you choose whether its rows become empty or switch to another value), **reorder values** with ↑↓ or drag (the order is used by filters, cell dropdowns, charts and column sorting) (every row using it is updated; renaming to an existing value merges them) and pick its **colour** (or leave it on Auto). You also set the dashboard title, the field that colours the row bar, and the **summary cards** (each card counts the visible rows where a field contains a value). The app pre-fills a best guess for every column.
+   The app pre-fills a best guess for every imported column. Nothing changes in your data until you click *Build dashboard* / *Save changes*.
+
+   **Start from scratch** creates an empty dashboard (for example a student list with Name, Major, Year, GPA and Status) that you fill in with *Add row*.
 3. **Use the dashboard**:
    - Summary cards show each count with its share of the visible records. Click a card to show only those rows.
    - Breakdown charts show how records split by a field. Click a bar to filter by that value.
