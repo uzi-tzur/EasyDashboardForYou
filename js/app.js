@@ -324,6 +324,7 @@
     $('#mapSearchHint').value = src?.searchHint || 'Search…';
     mapCtx.stats = (src?.stats || []).map(s => ({ ...s }));
     mapCtx.colors = JSON.parse(JSON.stringify(src?.colors || {}));
+    mapCtx.renames = {}; // { fieldId: { oldValue: newValue } }, applied when the dialog is saved
     mapCtx.accentField = src?.accentField;
     if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
       const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
@@ -443,16 +444,29 @@
         const i = values.indexOf(v);
         return i < CATEGORICAL_SLOTS ? `var(--c${i + 1})` : 'var(--c-neutral)';
       };
+      const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
       const row = v => {
         const current = custom[v];
-        const preview = el('span', { class: f.type === 'status' ? 'pill status' : 'pill' }, v);
+        const name = renames[v] ?? v;
+        const preview = el('span', { class: f.type === 'status' ? 'pill status' : 'pill' }, name);
         preview.style.setProperty('--k', current || auto(v));
+        const rename = el('input', {
+          type: 'text', class: `rename${renames[v] ? ' changed' : ''}`, value: name,
+          'aria-label': `Rename “${v}”`, title: renames[v] ? `Was: ${v}` : 'Type to rename this value in every row',
+          oninput: e => {
+            const nv = e.target.value.trim();
+            if (nv && nv !== v) renames[v] = nv; else delete renames[v];
+            preview.textContent = nv || v;
+            e.target.classList.toggle('changed', !!renames[v]);
+            e.target.title = renames[v] ? `Was: ${v}` : 'Type to rename this value in every row';
+          }
+        });
         const set = color => {
           if (color) custom[v] = color; else delete custom[v];
           list.replaceChild(row(v), r);
         };
         const r = el('div', { class: 'color-row' },
-          el('div', { class: 'color-value' }, preview),
+          el('div', { class: 'color-value' }, rename, preview),
           el('div', { class: 'swatches' },
             el('button', { type: 'button', class: `swatch auto${current ? '' : ' on'}`, title: 'Auto', onclick: () => set(null) }, 'Auto'),
             COLOR_CHOICES.map(([name, hex]) => el('button', {
@@ -488,6 +502,34 @@
     });
   }
 
+  // Rename values everywhere they are used: rows, colours, active filters and exact-match summary cards.
+  function applyRenames(renames) {
+    for (const [fid, map] of Object.entries(renames || {})) {
+      if (!Object.keys(map).length) continue;
+      const f = fieldById(fid);
+      if (!f) continue;
+      const to = v => map[v] ?? v;
+      for (const r of rows) {
+        const raw = String(r[fid] ?? '');
+        r[fid] = f.type === 'tags' ? splitTags(raw).map(to).join(', ') : (map[raw.trim()] ?? raw);
+      }
+      const colors = template.colors?.[fid];
+      if (colors) {
+        template.colors[fid] = {};
+        for (const [v, c] of Object.entries(colors)) {
+          // a renamed value's colour wins over an existing value it was merged into
+          if (!(to(v) in template.colors[fid]) || map[v]) template.colors[fid][to(v)] = c;
+        }
+      }
+      if (ui.filters[fid]) ui.filters[fid] = new Set([...ui.filters[fid]].map(to));
+      for (const s of template.stats) {
+        if (s.field !== fid) continue;
+        const old = Object.keys(map).find(v => v.toLowerCase() === s.value.trim().toLowerCase());
+        if (old) s.value = map[old];
+      }
+    }
+  }
+
   function applyMapping() {
     const fields = mapCtx.items.map(it => ({ ...it.field, label: it.field.label.trim() || it.field.source }));
     const previous = template;
@@ -514,6 +556,7 @@
       ui.sort = null;
       $('#search').value = '';
     }
+    applyRenames(mapCtx.renames);
     for (const id of Object.keys(ui.filters)) if (!fieldById(id)?.filter) delete ui.filters[id];
     save();
     render();
