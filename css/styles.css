@@ -179,6 +179,18 @@ textarea { width: 100%; font-family: Consolas, monospace; font-size: 12px; }
 .stat-row input[type=text] { flex: 1 1 140px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .error { color: var(--danger); font-size: 13px; }
+.dialog a { color: var(--primary); }
+.dialog code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); }
+.steps { padding-left: 20px; font-size: 13px; }
+.steps li { margin: 4px 0; }
+.choice { border: 0; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.choice > label:not(.field) { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.field.indent { margin: 0 0 6px 22px; }
+.small-text { font-size: 12px; }
+.status { font-size: 13px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); }
+.status.error { color: var(--danger); }
+.spacer { flex: 1; }
+.link-btn { border-color: transparent; background: none; color: var(--primary); }
 
 /* Toast */
 .toast {

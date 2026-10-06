@@ -36,9 +36,25 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
 
    Changes are saved automatically in your browser.
 4. **Export**:
-   - CSV, Excel (.xlsx), or **Copy for Google Sheets** (copies the data so you can paste it into a new sheet with Ctrl+V).
+   - CSV or Excel (.xlsx).
+   - **Google Sheets (sign in)**: signs in with Google and writes the data straight into a new spreadsheet. Later exports can replace the data in that same spreadsheet. This needs a one-time setup (see below).
+   - **Copy for Google Sheets (paste)**: copies the data so you can paste it into a new sheet with Ctrl+V. This needs no setup.
    - Export includes either the visible rows only or all rows.
    - Export uses the dashboard field names, so you can re-import the file later and it maps itself automatically.
+
+## Google Sheets export setup
+
+Google requires each app to have its own OAuth **Client ID**. A Client ID is a public identifier, not a secret. You set it up once:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/projectcreate), create a project.
+2. Enable the [Google Sheets API](https://console.cloud.google.com/apis/library/sheets.googleapis.com).
+3. Configure the [OAuth consent screen](https://console.cloud.google.com/auth/overview) as *External*. Then either add the people who will use it as **test users**, or publish the app. The only scope it uses is `drive.file`, which is not a sensitive scope.
+4. Under [Clients](https://console.cloud.google.com/auth/clients), create an OAuth client of type **Web application**. Add these **Authorized JavaScript origins**:
+   - `https://uzi-tzur.github.io`
+   - `http://localhost:8765` (for local use)
+5. Put the Client ID in `js/config.js` (`googleClientId`) so everyone using the site gets it. Alternatively, paste it into the export dialog, which saves it in that browser only.
+
+**Privacy:** the app asks only for the `drive.file` permission. It can create spreadsheets and edit the ones it created, but it cannot see anything else in your Drive. The sign-in token stays in memory and is never stored.
 
 ## Templates
 
@@ -53,4 +69,6 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
 | `index.html` | Page layout and dialogs |
 | `css/styles.css` | Styling (light + dark mode) |
 | `js/app.js` | Import, mapping, rendering, editing, export |
+| `js/google-sheets.js` | Google sign-in and direct Sheets export |
+| `js/config.js` | Settings (Google Client ID) |
 | `js/sample.js` | Built-in Release Tracking sample |

@@ -23,8 +23,11 @@
   const HUES = [212, 28, 145, 268, 330, 188, 48, 95, 240, 0, 170, 300];
   const TAG_SPLIT = /\s*[,;|\n]\s*/;
 
+  const CLIENT_ID_KEY = 'easydashboardforyou.googleClientId';
+
   let template = null;
   let rows = [];
+  let gsheetTarget = null; // last spreadsheet exported via sign-in: { spreadsheetId, sheetId, url, title }
   let nextId = 1;
   const ui = { filters: {}, search: '', sort: null };
 
@@ -105,7 +108,7 @@
   /* ---------- persistence ---------- */
 
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ template, rows })); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ template, rows, gsheetTarget })); } catch { /* storage unavailable */ }
   }
 
   function load() {
@@ -114,6 +117,7 @@
       if (data?.template?.fields) {
         template = data.template;
         rows = data.rows || [];
+        gsheetTarget = data.gsheetTarget || null;
         nextId = rows.reduce((m, r) => Math.max(m, r._id || 0), 0) + 1;
         rows.forEach(r => { if (!r._id) r._id = nextId++; });
       }
@@ -384,6 +388,7 @@
 
   function applyMapping() {
     const fields = mapCtx.items.map(it => ({ ...it.field, label: it.field.label.trim() || it.field.source }));
+    const previous = template;
     template = {
       title: $('#mapTitle').value.trim() || 'My Dashboard',
       searchHint: $('#mapSearchHint').value.trim() || 'Search…',
@@ -392,6 +397,8 @@
       stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim())
     };
     if (mapCtx.isNew) {
+      // a different data set gets its own spreadsheet on the next Google Sheets export
+      if (mapCtx.base !== previous) gsheetTarget = null;
       nextId = 1;
       rows = mapCtx.table.rows.map(r => {
         const row = { _id: nextId++ };
@@ -696,6 +703,93 @@
     toast(['Copied! ', link, ', click cell A1 and press Ctrl+V.'], 9000);
   }
 
+  /* ---------- direct Google Sheets export (sign-in) ---------- */
+
+  const isClientId = v => /^[\w-]+\.apps\.googleusercontent\.com$/.test(v);
+
+  function getClientId() {
+    try { const v = localStorage.getItem(CLIENT_ID_KEY); if (v) return v; } catch { /* storage unavailable */ }
+    return window.EASYDASH_CONFIG?.googleClientId || '';
+  }
+
+  function setGexportStatus(msg, isError = false) {
+    const s = $('#gexportStatus');
+    s.innerHTML = '';
+    if (!msg) { s.hidden = true; return; }
+    s.append(...(Array.isArray(msg) ? msg : [msg]));
+    s.className = `status${isError ? ' error' : ''}`;
+    s.hidden = false;
+  }
+
+  function openGoogleExport({ showSetup } = {}) {
+    GoogleSheets.preload();
+    const needSetup = showSetup || !getClientId();
+    $('#gexportSetup').hidden = !needSetup;
+    $('#gexportOrigin').textContent = location.origin;
+    $('#gexportClientId').value = getClientId();
+    $('#gexportChangeId').hidden = needSetup;
+    $('#gexportSignOut').hidden = !GoogleSheets.isSignedIn();
+    $('#gexportTitle').value = gsheetTarget?.title || template.title;
+    const hasTarget = !!gsheetTarget;
+    $('#gexportUpdateOpt').hidden = !hasTarget;
+    if (hasTarget) {
+      $('#gexportTargetLink').href = gsheetTarget.url;
+      $('#gexportTargetLink').textContent = gsheetTarget.title;
+    }
+    $$('input[name="gexportMode"]').forEach(r => { r.checked = r.value === (hasTarget ? 'update' : 'new'); });
+    const n = exportAoa().length - 1;
+    $('#gexportCount').textContent = `${n} row${n === 1 ? '' : 's'} will be exported.`;
+    $('#gexportGo').disabled = false;
+    $('#gexportGo').textContent = GoogleSheets.isSignedIn() ? 'Export' : 'Sign in & export';
+    setGexportStatus('');
+    if (!$('#gexportDialog').open) $('#gexportDialog').showModal();
+  }
+
+  async function runGoogleExport() {
+    if (!$('#gexportSetup').hidden) {
+      const id = $('#gexportClientId').value.trim();
+      if (!isClientId(id)) {
+        setGexportStatus('That doesn’t look like a Client ID. It should end in “.apps.googleusercontent.com”.', true);
+        return;
+      }
+      try { localStorage.setItem(CLIENT_ID_KEY, id); } catch { /* storage unavailable */ }
+    }
+    const update = $('input[name="gexportMode"]:checked')?.value === 'update' && gsheetTarget;
+    const title = $('#gexportTitle').value.trim() || template.title;
+    const btn = $('#gexportGo');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    setGexportStatus('Waiting for Google sign-in…');
+    try {
+      const result = await GoogleSheets.exportTable({
+        clientId: getClientId(),
+        title,
+        aoa: exportAoa(),
+        numeric: template.fields.map(f => f.type === 'number'),
+        target: update ? gsheetTarget : null
+      });
+      gsheetTarget = { spreadsheetId: result.spreadsheetId, sheetId: result.sheetId, url: result.url, title: result.title };
+      save();
+      const link = el('a', { href: result.url, target: '_blank', rel: 'noopener' }, 'Open the spreadsheet');
+      const note = result.recreated ? 'The previous spreadsheet couldn’t be accessed, so a new one was created. ' : '';
+      setGexportStatus([`✓ Exported to “${result.title}”. ${note}`, link]);
+      $('#gexportSetup').hidden = true;
+      $('#gexportChangeId').hidden = false;
+      $('#gexportSignOut').hidden = false;
+      btn.textContent = 'Export again';
+    } catch (err) {
+      let msg = err.message;
+      if (/idpiframe|origin|invalid_client|unregistered/i.test(msg)) {
+        msg += ` Check that ${location.origin} is listed as an Authorized JavaScript origin for this Client ID.`;
+      }
+      if (/has not been used|is disabled|SERVICE_DISABLED/i.test(msg)) msg = 'The Google Sheets API isn’t enabled in your Google Cloud project yet. Enable it and try again.';
+      setGexportStatus(`Export failed: ${msg}`, true);
+      btn.textContent = GoogleSheets.isSignedIn() ? 'Export' : 'Sign in & export';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function saveTemplate() {
     const out = { app: 'EasyDashboardForYou', version: 1, template };
     download(`${fileBase()}-template.json`, JSON.stringify(out, null, 2), 'application/json');
@@ -742,6 +836,7 @@
     'export-csv': exportCsv,
     'export-xlsx': exportXlsx,
     'export-gsheet': exportGoogleSheets,
+    'export-gsheet-api': () => openGoogleExport(),
     'save-template': saveTemplate
   };
 
@@ -817,6 +912,16 @@
       btn.disabled = false;
       btn.textContent = 'Import';
     }
+  });
+
+  // Google Sheets export dialog
+  $('#gexportForm').addEventListener('submit', e => { e.preventDefault(); runGoogleExport(); });
+  $('#gexportChangeId').addEventListener('click', () => openGoogleExport({ showSetup: true }));
+  $('#gexportSignOut').addEventListener('click', () => {
+    GoogleSheets.signOut();
+    $('#gexportSignOut').hidden = true;
+    $('#gexportGo').textContent = 'Sign in & export';
+    setGexportStatus('Signed out of Google.');
   });
 
   // Paste dialog
