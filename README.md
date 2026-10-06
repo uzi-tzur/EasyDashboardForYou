@@ -24,11 +24,15 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - whether to show it,
    - its display name and column order,
    - how it is displayed: *Text, Long text, Number, Date, Badge, Tags (comma-separated pills), Status*,
-   - whether it gets a filter.
+   - whether it gets a filter,
+   - whether it gets a breakdown chart.
 
    In the same dialog you also set the dashboard title, the field that colours the row bar, and the **summary cards** (each card counts the visible rows where a field contains a value). The app pre-fills a best guess for every column.
 3. **Use the dashboard**:
-   - Click filter chips to filter (values within a field are OR, filters across fields are AND).
+   - Summary cards show each count with its share of the visible records. Click a card to show only those rows.
+   - Breakdown charts show how records split by a field. Click a bar to filter by that value.
+   - Status values are coloured by meaning: green for done or approved, amber for pending or in review, red for blocked or failed, blue for in progress, grey otherwise.
+   - Use the filter dropdowns above the table. Values within a field are OR, filters across fields are AND. Active filters appear as chips you can remove one at a time.
    - Search, and click column headers to sort.
    - **Click any cell to edit it.** Enter saves, Esc cancels, Tab moves to the next cell.
    - Add rows or delete them (deleting can be undone).
@@ -39,6 +43,7 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - CSV or Excel (.xlsx).
    - **Google Sheets (sign in)**: signs in with Google and writes the data straight into a new spreadsheet. Later exports can replace the data in that same spreadsheet. This needs a one-time setup (see below).
    - **Copy for Google Sheets (paste)**: copies the data so you can paste it into a new sheet with Ctrl+V. This needs no setup.
+   - **Print / Save as PDF**: prints the dashboard without the toolbar.
    - Export includes either the visible rows only or all rows.
    - Export uses the dashboard field names, so you can re-import the file later and it maps itself automatically.
 

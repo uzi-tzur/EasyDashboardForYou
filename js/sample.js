@@ -21,15 +21,15 @@ window.SAMPLE = {
     searchHint: 'Search item, ticket, or description…',
     accentField: 'status',
     fields: [
-      { id: 'item_id', source: 'Item ID', label: 'Item ID', type: 'text', show: true, filter: false },
-      { id: 'release', source: 'Release', label: 'Release', type: 'badge', show: true, filter: true },
-      { id: 'component', source: 'Component', label: 'Component', type: 'badge', show: true, filter: true },
-      { id: 'workstream', source: 'Workstream', label: 'Workstream', type: 'badge', show: true, filter: true },
-      { id: 'ticket', source: 'Ticket', label: 'Ticket', type: 'text', show: true, filter: false },
-      { id: 'description', source: 'Description', label: 'Description', type: 'longtext', show: true, filter: false },
-      { id: 'environment', source: 'Environment', label: 'Environment', type: 'tags', show: true, filter: true },
-      { id: 'status', source: 'Status', label: 'Status', type: 'status', show: true, filter: true },
-      { id: 'release_note', source: 'Release Note', label: 'Release Note', type: 'text', show: true, filter: false }
+      { id: 'item_id', source: 'Item ID', label: 'Item ID', type: 'text', show: true, filter: false, chart: false },
+      { id: 'release', source: 'Release', label: 'Release', type: 'badge', show: true, filter: true, chart: true },
+      { id: 'component', source: 'Component', label: 'Component', type: 'badge', show: true, filter: true, chart: false },
+      { id: 'workstream', source: 'Workstream', label: 'Workstream', type: 'badge', show: true, filter: true, chart: false },
+      { id: 'ticket', source: 'Ticket', label: 'Ticket', type: 'text', show: true, filter: false, chart: false },
+      { id: 'description', source: 'Description', label: 'Description', type: 'longtext', show: true, filter: false, chart: false },
+      { id: 'environment', source: 'Environment', label: 'Environment', type: 'tags', show: true, filter: true, chart: true },
+      { id: 'status', source: 'Status', label: 'Status', type: 'status', show: true, filter: true, chart: true },
+      { id: 'release_note', source: 'Release Note', label: 'Release Note', type: 'text', show: true, filter: false, chart: false }
     ],
     stats: [
       { label: 'Pending release note', field: 'status', value: 'release note pending' },

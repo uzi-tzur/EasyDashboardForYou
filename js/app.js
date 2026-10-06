@@ -2,7 +2,7 @@
  *
  * Data model
  *   template: { title, searchHint, accentField, fields: [Field], stats: [Stat] }
- *   Field:    { id, source, label, type, show, filter }
+ *   Field:    { id, source, label, type, show, filter, chart }
  *             type ∈ text | longtext | number | date | badge | tags | status
  *   Stat:     { label, field, value }  → counts visible rows whose field contains value
  *   rows:     [{ _id, [field.id]: string }]
@@ -20,7 +20,8 @@
     ['tags', 'Tags (multiple pills)'],
     ['status', 'Status']
   ];
-  const HUES = [212, 28, 145, 268, 330, 188, 48, 95, 240, 0, 170, 300];
+  const CATEGORICAL_SLOTS = 8;
+  const CHART_MAX_BARS = 8;
   const TAG_SPLIT = /\s*[,;|\n]\s*/;
 
   const CLIENT_ID_KEY = 'easydashboardforyou.googleClientId';
@@ -29,7 +30,8 @@
   let rows = [];
   let gsheetTarget = null; // last spreadsheet exported via sign-in: { spreadsheetId, sheetId, url, title }
   let nextId = 1;
-  const ui = { filters: {}, search: '', sort: null };
+  let updatedAt = null;
+  const ui = { filters: {}, search: '', sort: null, statFilter: null, openFilter: null };
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -53,37 +55,52 @@
   const valuesOf = (field, row) => field.type === 'tags' ? splitTags(row[field.id]) : [String(row[field.id] ?? '').trim()].filter(Boolean);
   const fieldById = id => template?.fields.find(f => f.id === id);
 
-  function hueFor(value, type) {
-    const v = String(value).toLowerCase();
-    if (type === 'status') {
-      if (/approv|done|complete[d]?$|closed|deployed|resolved|success|pass/.test(v)) return 145;
-      if (/reject|fail|block|error|cancel|overdue/.test(v)) return 0;
-      if (/progress|testing|review|pending/.test(v)) return 212;
-    }
-    let h = 0;
-    for (const ch of v) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return HUES[h % HUES.length];
+  function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'i');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.append(use);
+    return svg;
   }
 
-  function pill(value, type, extraClass = '') {
-    const span = el('span', { class: `pill ${extraClass}`.trim() }, value);
-    const h = hueFor(value, type);
-    span.style.setProperty('--h', h);
-    applyPillColor(span, h);
+  /* ---------- colour ---------- */
+
+  // Status values map to a reserved role by meaning; always rendered next to their label.
+  function statusRole(value) {
+    const v = String(value).toLowerCase();
+    if (/reject|fail|block|error|cancel|overdue|declin|critical|broken/.test(v)) return 'critical';
+    if (/pending|waiting|on hold|hold|review|to ?do|needs|awaiting/.test(v)) return 'warning';
+    if (/approv|done|complete|closed|deployed|resolved|success|pass|ready|certified|live|shipped|accepted/.test(v)) return 'good';
+    if (/progress|testing|doing|active|started|ongoing|planned|scheduled|working/.test(v)) return 'info';
+    return 'neutral';
+  }
+
+  // Categorical slot per value: fixed order by first appearance, so a value keeps its colour
+  // regardless of filters. Values past the 8th slot fall back to neutral (never a generated hue).
+  let slotCache = new Map();
+  function slotFor(field, value) {
+    let m = slotCache.get(field.id);
+    if (!m) {
+      m = new Map();
+      for (const r of rows) for (const v of valuesOf(field, r)) if (!m.has(v)) m.set(v, m.size);
+      slotCache.set(field.id, m);
+    }
+    const i = m.get(value);
+    return i === undefined || i >= CATEGORICAL_SLOTS ? null : i + 1;
+  }
+
+  function colorVar(field, value) {
+    if (field?.type === 'status') return `var(--s-${statusRole(value)})`;
+    const slot = field ? slotFor(field, value) : null;
+    return slot ? `var(--c${slot})` : 'var(--c-neutral)';
+  }
+
+  function pill(value, field) {
+    const span = el('span', { class: field?.type === 'status' ? 'pill status' : 'pill' }, value);
+    span.style.setProperty('--k', colorVar(field, value));
     return span;
   }
-
-  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  function applyPillColor(span, h) {
-    if (darkQuery.matches) {
-      span.style.background = `hsl(${h} 35% 26%)`;
-      span.style.color = `hsl(${h} 80% 86%)`;
-    } else {
-      span.style.background = `hsl(${h} 75% 90%)`;
-      span.style.color = `hsl(${h} 55% 28%)`;
-    }
-  }
-  darkQuery.addEventListener?.('change', () => render());
 
   function toast(msg, ms = 3500) {
     const t = $('#toast');
@@ -108,7 +125,8 @@
   /* ---------- persistence ---------- */
 
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ template, rows, gsheetTarget })); } catch { /* storage unavailable */ }
+    updatedAt = Date.now();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ template, rows, gsheetTarget, updatedAt })); } catch { /* storage unavailable */ }
   }
 
   function load() {
@@ -118,6 +136,7 @@
         template = data.template;
         rows = data.rows || [];
         gsheetTarget = data.gsheetTarget || null;
+        updatedAt = data.updatedAt || null;
         nextId = rows.reduce((m, r) => Math.max(m, r._id || 0), 0) + 1;
         rows.forEach(r => { if (!r._id) r._id = nextId++; });
       }
@@ -297,6 +316,11 @@
     $('#mapSearchHint').value = src?.searchHint || 'Search…';
     mapCtx.stats = (src?.stats || []).map(s => ({ ...s }));
     mapCtx.accentField = src?.accentField;
+    if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
+      const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
+      const ids = defaultChartIds(mapCtx.items.map(it => it.field), accent);
+      mapCtx.items.forEach(it => { it.field.chart = ids.includes(it.field.id); });
+    }
     renderSheetPicker();
     renderMapRows();
     renderMapStats();
@@ -335,6 +359,7 @@
         el('td', {}, el('select', { onchange: e => { f.type = e.target.value; } },
           TYPES.map(([v, l]) => el('option', { value: v, selected: v === f.type }, l)))),
         el('td', {}, el('input', { type: 'checkbox', checked: f.filter, onchange: e => { f.filter = e.target.checked; } })),
+        el('td', {}, el('input', { type: 'checkbox', checked: !!f.chart, title: 'Show a breakdown chart for this field', onchange: e => { f.chart = e.target.checked; } })),
         el('td', { class: 'sample', title: it.sample }, it.sample)
       );
       tbody.append(tr);
@@ -418,18 +443,26 @@
 
   /* ---------- filtering / sorting ---------- */
 
-  function visibleRows() {
+  function statMatches(stat, row) {
+    const f = fieldById(stat.field);
+    return !!f && String(row[f.id] ?? '').toLowerCase().includes(stat.value.toLowerCase());
+  }
+
+  // Rows passing all filters. `exceptField` ignores that field's own filter (used by its breakdown chart).
+  function visibleRows(exceptField = null) {
     const q = ui.search.trim().toLowerCase();
-    const active = Object.entries(ui.filters).filter(([, set]) => set.size);
+    const active = Object.entries(ui.filters).filter(([fid, set]) => set.size && fid !== exceptField);
+    const stat = ui.statFilter != null ? template.stats[ui.statFilter] : null;
     let out = rows.filter(r => {
       for (const [fid, set] of active) {
         const f = fieldById(fid);
         if (!f || !valuesOf(f, r).some(v => set.has(v))) return false;
       }
+      if (stat && !statMatches(stat, r)) return false;
       if (q && !template.fields.some(f => String(r[f.id] ?? '').toLowerCase().includes(q))) return false;
       return true;
     });
-    if (ui.sort) {
+    if (ui.sort && !exceptField) {
       const f = fieldById(ui.sort.field);
       const dir = ui.sort.dir;
       const key = r => {
@@ -461,68 +494,226 @@
   /* ---------- rendering ---------- */
 
   function render() {
+    slotCache = new Map();
     const has = !!template;
     $('#emptyState').hidden = has;
     $('#dashboard').hidden = !has;
-    $$('[data-action="edit-mapping"],[data-action="add-row"],[data-action="clear-filters"],[data-menu="exportMenu"]')
+    $$('[data-action="edit-mapping"],[data-action="add-row"],[data-menu="exportMenu"]')
       .forEach(b => (b.disabled = !has));
-    $('#dashTitle').textContent = has ? template.title : 'EasyDashboardForYou';
     document.title = has ? `${template.title} · EasyDashboardForYou` : 'EasyDashboardForYou';
     if (!has) return;
+    if ($('#dashTitle').contentEditable !== 'true') $('#dashTitle').textContent = template.title;
     $('#search').placeholder = template.searchHint || 'Search…';
+    if (ui.statFilter != null && !template.stats[ui.statFilter]) ui.statFilter = null;
     const vis = visibleRows();
+    renderMeta();
     renderStats(vis);
+    renderCharts();
     renderFilters();
+    renderActiveFilters();
     renderTable(vis);
+    $('#rowCount').innerHTML = '';
+    $('#rowCount').append('Showing ', el('b', {}, vis.length), ' of ', el('b', {}, rows.length), ` record${rows.length === 1 ? '' : 's'}`);
   }
+
+  function renderMeta() {
+    const parts = [
+      [el('b', {}, rows.length), ` record${rows.length === 1 ? '' : 's'}`],
+      [el('b', {}, template.fields.filter(f => f.show).length), ' fields']
+    ];
+    if (updatedAt) {
+      const d = new Date(updatedAt);
+      parts.push([`Last edited ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`]);
+    }
+    const meta = $('#dashMeta');
+    meta.innerHTML = '';
+    parts.forEach((p, i) => { if (i) meta.append('  ·  '); meta.append(...p); });
+  }
+
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
 
   function renderStats(vis) {
     const box = $('#stats');
     box.innerHTML = '';
-    box.append(el('div', { class: 'stat' }, el('b', {}, vis.length), el('span', {}, 'Visible records')));
-    for (const s of template.stats) {
+    const filtered = vis.length !== rows.length;
+    box.append(el('div', { class: 'card kpi static' },
+      el('div', { class: 'kpi-label' }, filtered ? 'Visible records' : 'Total records'),
+      el('div', { class: 'kpi-value' }, vis.length, filtered ? el('small', {}, `of ${rows.length}`) : null),
+      el('div', { class: 'meter', style: '--k: var(--c1)' }, el('i', { style: `width:${pct(vis.length, rows.length)}%` })),
+      el('div', { class: 'kpi-foot' }, filtered ? `${pct(vis.length, rows.length)}% of all records` : 'All records shown')
+    ));
+    template.stats.forEach((s, i) => {
       const f = fieldById(s.field);
-      if (!f) continue;
-      const needle = s.value.toLowerCase();
-      const n = vis.filter(r => String(r[f.id] ?? '').toLowerCase().includes(needle)).length;
-      box.append(el('div', { class: 'stat' }, el('b', {}, n), el('span', {}, s.label)));
+      if (!f) return;
+      const n = vis.filter(r => statMatches(s, r)).length;
+      const k = f.type === 'status' ? `var(--s-${statusRole(s.value)})` : 'var(--c1)';
+      const active = ui.statFilter === i;
+      box.append(el('button', {
+        type: 'button',
+        class: `card kpi${active ? ' active' : ''}`,
+        style: `--k: ${k}`,
+        'aria-pressed': active ? 'true' : 'false',
+        'data-tip': active ? 'Click to remove this filter' : `Click to show only rows where <b>${escapeHtml(f.label)}</b> contains “${escapeHtml(s.value)}”`,
+        onclick: () => { ui.statFilter = active ? null : i; render(); }
+      },
+        el('div', { class: 'kpi-label' }, el('span', { class: 'dot' }), s.label),
+        el('div', { class: 'kpi-value' }, n),
+        el('div', { class: 'meter' }, el('i', { style: `width:${pct(n, vis.length)}%` })),
+        el('div', { class: 'kpi-foot' }, `${pct(n, vis.length)}% of visible records`)
+      ));
+    });
+  }
+
+  // Default breakdown charts: the colour-bar field plus up to two other filterable category fields.
+  function defaultChartIds(fields, accentField) {
+    const ok = f => ['status', 'badge', 'tags'].includes(f.type);
+    const ids = [];
+    const accent = fields.find(f => f.id === accentField && ok(f));
+    if (accent) ids.push(accent.id);
+    for (const f of fields) {
+      if (ids.length >= 3) break;
+      if (!ids.includes(f.id) && ok(f) && f.filter) ids.push(f.id);
     }
+    return ids;
+  }
+
+  function chartFields() {
+    if (template.fields.some(f => typeof f.chart === 'boolean')) {
+      // the row-colour field (usually Status) leads
+      return template.fields.filter(f => f.chart).sort((a, b) => (b.id === template.accentField) - (a.id === template.accentField));
+    }
+    const ids = defaultChartIds(template.fields, template.accentField);
+    return ids.map(fieldById);
+  }
+
+  function toggleFilter(fieldId, value) {
+    const set = ui.filters[fieldId] || (ui.filters[fieldId] = new Set());
+    set.has(value) ? set.delete(value) : set.add(value);
+    render();
+  }
+
+  function renderCharts() {
+    const box = $('#charts');
+    box.innerHTML = '';
+    for (const f of chartFields()) {
+      const base = visibleRows(f.id);
+      const counts = new Map();
+      base.forEach(r => valuesOf(f, r).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
+      if (!counts.size) continue;
+      const entries = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { numeric: true }));
+      const top = entries.slice(0, CHART_MAX_BARS);
+      const rest = entries.slice(CHART_MAX_BARS);
+      const max = top[0][1];
+      const selected = ui.filters[f.id];
+      const isStatus = f.type === 'status';
+
+      const bar = (label, n, { k, other, dim, sel, tip } = {}) => el(other ? 'div' : 'button', {
+        type: other ? undefined : 'button',
+        class: `bar-row${other ? ' other' : ''}${dim ? ' dim' : ''}${sel ? ' selected' : ''}`,
+        style: `--k: ${k}`,
+        'data-tip': tip,
+        onclick: other ? undefined : () => toggleFilter(f.id, label)
+      },
+        el('span', { class: 'bar-label' }, isStatus && !other ? el('i', { class: 'dot' }) : null, el('span', {}, label)),
+        el('span', { class: 'bar-track' }, el('i', { style: `width:${Math.max(1.5, (n / max) * 100)}%` })),
+        el('span', { class: 'bar-value' }, n, el('small', {}, `${pct(n, base.length)}%`))
+      );
+
+      const body = el('div', { class: 'chart-body' });
+      for (const [v, n] of top) {
+        const sel = selected?.has(v);
+        body.append(bar(v, n, {
+          k: isStatus ? colorVar(f, v) : 'var(--c1)',
+          sel,
+          dim: selected?.size && !sel,
+          tip: `<b>${escapeHtml(v)}</b><br>${n} record${n === 1 ? '' : 's'} · ${pct(n, base.length)}%<br>${sel ? 'Click to remove filter' : 'Click to filter'}`
+        }));
+      }
+      if (rest.length) {
+        const n = rest.reduce((s, [, c]) => s + c, 0);
+        body.append(bar(`Other (${rest.length} values)`, n, { k: 'var(--c-neutral)', other: true, tip: `${rest.length} smaller values combined. Use the ${f.label} filter to pick one.` }));
+      }
+      const unit = f.type === 'tags' ? 'tag uses' : 'records';
+      box.append(el('section', { class: 'card' },
+        el('div', { class: 'card-head' },
+          el('h2', { class: 'card-title' }, `By ${f.label}`),
+          el('span', { class: 'card-sub' }, `${base.length} records · ${counts.size} value${counts.size === 1 ? '' : 's'}${f.type === 'tags' ? ` · counts are ${unit}` : ''}`)),
+        body));
+    }
+    box.hidden = !box.children.length;
   }
 
   function renderFilters() {
     const box = $('#filters');
     box.innerHTML = '';
-    for (const f of template.fields.filter(f => f.filter)) {
-      const values = uniqueValues(f);
-      if (!values.length) continue;
+    const fields = template.fields.filter(f => f.filter && uniqueValues(f).length);
+    if (!fields.length) return;
+    box.append(el('span', { class: 'filters-label' }, icon('filter'), 'Filter'));
+    for (const f of fields) {
       const set = ui.filters[f.id] || (ui.filters[f.id] = new Set());
-      const group = el('div', { class: 'filter-group' }, el('label', {}, `${f.label}:`));
-      const chipType = f.type === 'status' ? 'status' : f.type;
-      const toggle = v => { set.has(v) ? set.delete(v) : set.add(v); render(); };
-
-      if (values.length <= 8) {
-        // Like the template: when a value is selected, show just the selected chips (with ×).
-        const shown = set.size ? values.filter(v => set.has(v)) : values;
-        for (const v of shown) {
-          const chip = pill(v, chipType, `chip ${set.has(v) ? 'active' : ''}`);
-          if (set.has(v)) chip.append(el('span', { class: 'x' }, '×'));
-          chip.title = set.has(v) ? 'Remove filter' : 'Filter by this value';
-          chip.addEventListener('click', () => toggle(v));
-          group.append(chip);
+      const pop = el('div', { class: 'menu-list filter-pop', onclick: e => e.stopPropagation() });
+      const label = !set.size ? [f.label] : [`${f.label}: `, el('b', {}, set.size === 1 ? [...set][0] : `${set.size} selected`)];
+      const btn = el('button', {
+        type: 'button',
+        class: `filter-btn${set.size ? ' on' : ''}`,
+        'aria-haspopup': 'true',
+        onclick: e => {
+          e.stopPropagation();
+          const wasOpen = pop.classList.contains('open');
+          closeMenus();
+          if (!wasOpen) openFilterPop(f, pop);
         }
-      } else {
-        for (const v of values.filter(v => set.has(v))) {
-          const chip = pill(v, chipType, 'chip active');
-          chip.append(el('span', { class: 'x' }, '×'));
-          chip.addEventListener('click', () => toggle(v));
-          group.append(chip);
-        }
-        group.append(el('select', { onchange: e => { if (e.target.value) toggle(e.target.value); } },
-          el('option', { value: '' }, set.size ? '+ add' : 'All'),
-          values.filter(v => !set.has(v)).map(v => el('option', { value: v }, v))));
-      }
-      box.append(group);
+      }, set.size ? null : icon('plus'), ...label, icon('chevron'));
+      box.append(el('div', { class: 'menu' }, btn, pop));
+      if (ui.openFilter === f.id) openFilterPop(f, pop, { keepFocus: true });
     }
+  }
+
+  function openFilterPop(f, pop) {
+    ui.openFilter = f.id;
+    const set = ui.filters[f.id];
+    const counts = new Map();
+    visibleRows(f.id).forEach(r => valuesOf(f, r).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
+    const values = uniqueValues(f);
+    const list = el('div', { class: 'filter-options' });
+    const fill = q => {
+      list.innerHTML = '';
+      const shown = values.filter(v => !q || v.toLowerCase().includes(q));
+      for (const v of shown) {
+        list.append(el('label', { class: 'filter-option' },
+          el('input', { type: 'checkbox', checked: set.has(v), onchange: () => toggleFilter(f.id, v) }),
+          ['badge', 'status', 'tags'].includes(f.type) ? pill(v, f) : el('span', { class: 'name' }, v),
+          el('span', { class: 'spacer' }),
+          el('span', { class: 'count' }, counts.get(v) || 0)));
+      }
+      if (!shown.length) list.append(el('div', { class: 'filter-option muted' }, 'No matches'));
+    };
+    fill('');
+    pop.innerHTML = '';
+    if (values.length > 8) {
+      pop.append(el('input', { type: 'search', placeholder: `Search ${f.label.toLowerCase()}…`, oninput: e => fill(e.target.value.trim().toLowerCase()) }));
+    }
+    pop.append(list, el('div', { class: 'pop-foot' },
+      el('button', { type: 'button', onclick: () => { set.clear(); render(); } }, 'Clear'),
+      el('button', { type: 'button', onclick: () => closeMenus() }, 'Done')));
+    pop.classList.add('open');
+  }
+
+  function renderActiveFilters() {
+    const box = $('#activeFilters');
+    box.innerHTML = '';
+    const chip = (k, v, onRemove) => el('button', { type: 'button', class: 'af-chip', title: 'Remove filter', onclick: onRemove },
+      el('span', { class: 'k' }, `${k}:`), v, icon('x'));
+    for (const [fid, set] of Object.entries(ui.filters)) {
+      const f = fieldById(fid);
+      if (!f) continue;
+      for (const v of set) box.append(chip(f.label, v, () => toggleFilter(fid, v)));
+    }
+    const stat = ui.statFilter != null ? template.stats[ui.statFilter] : null;
+    if (stat) box.append(chip('Card', stat.label, () => { ui.statFilter = null; render(); }));
+    if (ui.search.trim()) box.append(chip('Search', `“${ui.search.trim()}”`, () => { ui.search = ''; $('#search').value = ''; render(); }));
+    if (box.children.length) box.append(el('button', { type: 'button', class: 'link', 'data-action': 'clear-filters' }, 'Clear all'));
+    box.hidden = !box.children.length;
   }
 
   function renderTable(vis) {
@@ -537,34 +728,43 @@
       fields.map(f => {
         const s = ui.sort?.field === f.id ? ui.sort.dir : 0;
         return el('th', {
-          title: 'Sort',
+          class: `${s ? 'sorted' : ''} ${f.type === 'number' ? 'num' : ''}`.trim() || undefined,
+          'aria-sort': s === 1 ? 'ascending' : s === -1 ? 'descending' : undefined,
+          title: 'Click to sort',
           onclick: () => {
             if (!s) ui.sort = { field: f.id, dir: 1 };
             else if (s === 1) ui.sort = { field: f.id, dir: -1 };
             else ui.sort = null;
             render();
           }
-        }, f.label, el('span', { class: 'arrow' }, s === 1 ? '▲' : s === -1 ? '▼' : '↕'));
+        }, f.label, el('span', { class: 'arrow' }, s === 1 ? '▲' : s === -1 ? '▼' : '▲'));
       }),
       el('th', { class: 'row-actions' })
     ));
 
     if (!vis.length) {
-      tbody.append(el('tr', {}, el('td', { class: 'no-rows', colspan: fields.length + 2 }, rows.length ? 'No rows match the current filters.' : 'No rows yet — click “+ Add row”.')));
+      tbody.append(el('tr', {}, el('td', { class: 'no-rows', colspan: fields.length + 2 },
+        rows.length ? 'No records match the current filters.' : 'No records yet. Click “Add row” to create one.')));
       return;
     }
 
     const accent = fieldById(template.accentField);
+    const keyField = fields[0];
     for (const r of vis) {
       const bar = el('i');
-      if (accent && r[accent.id]) bar.style.background = `hsl(${hueFor(valuesOf(accent, r)[0] || '', accent.type)} 60% 52%)`;
+      const accentValue = accent ? valuesOf(accent, r)[0] : null;
+      if (accentValue) {
+        bar.style.setProperty('--k', colorVar(accent, accentValue));
+        bar.title = `${accent.label}: ${accentValue}`;
+      }
       const tr = el('tr', { 'data-id': r._id }, el('td', { class: 'bar' }, bar));
       for (const f of fields) {
-        const td = el('td', { class: `cell ${f.type === 'longtext' ? 'wrap' : ''}`, 'data-field': f.id });
+        const cls = ['cell', f.type === 'longtext' && 'wrap', f.type === 'number' && 'num', f === keyField && 'key'].filter(Boolean).join(' ');
+        const td = el('td', { class: cls, 'data-field': f.id });
         fillCell(td, f, r[f.id]);
         tr.append(td);
       }
-      tr.append(el('td', { class: 'row-actions' }, el('button', { title: 'Delete row', 'data-del': r._id }, '🗑')));
+      tr.append(el('td', { class: 'row-actions' }, el('button', { title: 'Delete row', 'aria-label': 'Delete row', 'data-del': r._id }, icon('trash'))));
       tbody.append(tr);
     }
   }
@@ -572,11 +772,13 @@
   function fillCell(td, f, value) {
     td.innerHTML = '';
     const v = String(value ?? '').trim();
-    if (!v) { td.append(el('span', { class: 'empty-cell' }, '-')); return; }
-    if (f.type === 'badge' || f.type === 'status') td.append(pill(v, f.type));
-    else if (f.type === 'tags') td.append(...splitTags(v).map(t => pill(t, 'tags')));
+    if (!v) { td.append(el('span', { class: 'empty-cell' }, '—')); return; }
+    if (f.type === 'badge' || f.type === 'status') td.append(pill(v, f));
+    else if (f.type === 'tags') td.append(...splitTags(v).map(t => pill(t, f)));
     else td.textContent = v;
   }
+
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   /* ---------- inline editing ---------- */
 
@@ -717,7 +919,7 @@
     s.innerHTML = '';
     if (!msg) { s.hidden = true; return; }
     s.append(...(Array.isArray(msg) ? msg : [msg]));
-    s.className = `status${isError ? ' error' : ''}`;
+    s.className = `status-msg${isError ? ' error' : ''}`;
     s.hidden = false;
   }
 
@@ -818,7 +1020,10 @@
 
   /* ---------- wiring ---------- */
 
-  function closeMenus() { $$('.menu-list.open').forEach(m => m.classList.remove('open')); }
+  function closeMenus() {
+    ui.openFilter = null;
+    $$('.menu-list.open').forEach(m => m.classList.remove('open'));
+  }
 
   const actions = {
     'import-file': () => $('#fileInput').click(),
@@ -832,7 +1037,8 @@
     }),
     'edit-mapping': () => openMapping(),
     'add-row': addRow,
-    'clear-filters': () => { ui.filters = {}; ui.search = ''; ui.sort = null; $('#search').value = ''; render(); },
+    'clear-filters': () => { ui.filters = {}; ui.search = ''; ui.statFilter = null; $('#search').value = ''; render(); },
+    'print': () => window.print(),
     'export-csv': exportCsv,
     'export-xlsx': exportXlsx,
     'export-gsheet': exportGoogleSheets,
@@ -864,6 +1070,19 @@
   });
 
   $('#search').addEventListener('input', e => { ui.search = e.target.value; render(); });
+
+  // Hover tooltips for anything with data-tip
+  const tip = $('#tip');
+  document.addEventListener('mousemove', e => {
+    const t = e.target.closest?.('[data-tip]');
+    if (!t) { tip.hidden = true; return; }
+    if (tip.dataset.src !== t.dataset.tip) { tip.innerHTML = t.dataset.tip; tip.dataset.src = t.dataset.tip; }
+    tip.hidden = false;
+    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${Math.min(e.clientX + pad, innerWidth - w - 8)}px`;
+    tip.style.top = `${e.clientY + pad + h > innerHeight ? e.clientY - h - pad : e.clientY + pad}px`;
+  });
+  document.addEventListener('scroll', () => { tip.hidden = true; }, true);
 
   // Title: click to rename
   const title = $('#dashTitle');
