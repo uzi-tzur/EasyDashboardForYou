@@ -38,6 +38,7 @@ Then open http://localhost:8765. There is no build step and nothing to install. 
    - Search, and click column headers to sort.
    - **Click any cell to edit it.** Status and Badge cells open a dropdown of all values, including a “+ New value…” option. Enter saves, Esc cancels, Tab moves to the next cell.
    - Add rows or delete them (deleting can be undone).
+   - **Delete many rows at once**: tick the checkboxes on the left (Shift+click selects a range, the header box selects all visible rows), then click *Delete selected*. Undo restores them all.
    - Click the title to rename it.
 
    Changes are saved automatically in your browser.

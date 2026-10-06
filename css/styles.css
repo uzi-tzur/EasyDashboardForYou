@@ -282,15 +282,18 @@ th, td { padding: 0 12px; text-align: left; white-space: nowrap; vertical-align:
 #grid td.bar i { display: block; width: 3px; height: 24px; margin-left: 6px; border-radius: 2px; background: var(--k, transparent); }
 #grid td.cell { cursor: text; }
 #grid td.cell:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
-/* delete column: left edge, always visible, stays put when the table scrolls sideways */
-#grid .row-actions { position: sticky; left: 0; z-index: 1; width: 44px; min-width: 44px; text-align: center; padding: 0 4px 0 8px; background: var(--surface); }
+/* select + delete column: left edge, always visible, stays put when the table scrolls sideways */
+#grid .row-actions { position: sticky; left: 0; z-index: 1; width: 74px; min-width: 74px; white-space: nowrap; padding: 0 4px 0 12px; background: var(--surface); }
+#grid .row-actions input[type=checkbox] { vertical-align: middle; margin: 0 6px 0 0; cursor: pointer; }
+#grid tbody tr.selected td { background: var(--primary-soft); }
+#grid tbody tr.selected td.row-actions { background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
 #grid th.row-actions { z-index: 3; background: var(--surface-2); }
 #grid tbody tr:hover td.row-actions { background: var(--surface-2); }
-#grid td.row-actions button { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
+#grid td.row-actions button { vertical-align: middle; display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
 #grid td.row-actions button svg.i { width: 15px; height: 15px; }
 #grid td.row-actions button:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
-#grid td select,
-#grid td input {
+#grid td.cell select,
+#grid td.cell input {
   font: inherit; width: 100%; min-width: 140px; height: 30px; padding: 0 8px;
   border: 1px solid var(--primary); border-radius: 6px; background: var(--surface); color: var(--text);
   box-shadow: 0 0 0 3px var(--primary-soft); outline: none;
@@ -526,3 +529,11 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
 .manage-name { width: 100%; }
 .manage-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .manage-row.current .manage-meta { color: var(--primary); font-weight: 600; }
+
+/* ---------- bulk selection bar ---------- */
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--primary-soft); border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600;
+}
+.btn.danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger-solid:hover { filter: brightness(1.06); background: var(--danger); }

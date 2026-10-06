@@ -39,7 +39,7 @@
   let gsheetTarget = null; // last spreadsheet exported via sign-in: { spreadsheetId, sheetId, url, title }
   let nextId = 1;
   let updatedAt = null;
-  const ui = { filters: {}, search: '', sort: null, statFilter: null, openFilter: null };
+  const ui = { filters: {}, search: '', sort: null, statFilter: null, openFilter: null, selected: new Set(), lastSelected: null };
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -173,7 +173,7 @@
     updatedAt = d?.updatedAt || null;
     nextId = rows.reduce((m, r) => Math.max(m, r._id || 0), 0) + 1;
     rows.forEach(r => { if (!r._id) r._id = nextId++; });
-    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null });
+    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null, selected: new Set(), lastSelected: null });
     $('#search').value = '';
     persist();
     render();
@@ -183,7 +183,7 @@
   function startNewDashboard() {
     store.activeId = null;
     gsheetTarget = null;
-    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null });
+    Object.assign(ui, { filters: {}, search: '', sort: null, statFilter: null, openFilter: null, selected: new Set(), lastSelected: null });
     $('#search').value = '';
   }
 
@@ -1083,7 +1083,11 @@
     renderCharts();
     renderFilters();
     renderActiveFilters();
+    // only rows you can see stay selected, so a filter never hides a pending delete
+    const visibleIds = new Set(vis.map(r => r._id));
+    for (const id of ui.selected) if (!visibleIds.has(id)) ui.selected.delete(id);
     renderTable(vis);
+    renderBulkBar();
     $('#rowCount').innerHTML = '';
     $('#rowCount').append('Showing ', el('b', {}, vis.length), ' of ', el('b', {}, rows.length), ` record${rows.length === 1 ? '' : 's'}`);
   }
@@ -1299,7 +1303,19 @@
     tbody.innerHTML = '';
 
     thead.append(el('tr', {},
-      el('th', { class: 'row-actions', 'aria-label': 'Row actions' }),
+      el('th', { class: 'row-actions' }, (() => {
+        const all = el('input', { type: 'checkbox', class: 'row-select-all', title: 'Select all visible rows', 'aria-label': 'Select all visible rows' });
+        const n = vis.filter(r => ui.selected.has(r._id)).length;
+        all.checked = vis.length > 0 && n === vis.length;
+        all.indeterminate = n > 0 && n < vis.length;
+        all.disabled = !vis.length;
+        all.addEventListener('change', () => {
+          if (all.checked) vis.forEach(r => ui.selected.add(r._id)); else ui.selected.clear();
+          ui.lastSelected = null;
+          render();
+        });
+        return all;
+      })()),
       el('th', { class: 'bar' }),
       fields.map(f => {
         const s = ui.sort?.field === f.id ? ui.sort.dir : 0;
@@ -1332,8 +1348,11 @@
         bar.style.setProperty('--k', colorVar(accent, accentValue));
         bar.title = `${accent.label}: ${accentValue}`;
       }
-      const tr = el('tr', { 'data-id': r._id },
-        el('td', { class: 'row-actions' }, el('button', { title: 'Delete row', 'aria-label': 'Delete row', 'data-del': r._id }, icon('trash'))),
+      const selected = ui.selected.has(r._id);
+      const tr = el('tr', { 'data-id': r._id, class: selected ? 'selected' : undefined },
+        el('td', { class: 'row-actions' },
+          el('input', { type: 'checkbox', class: 'row-select', checked: selected, 'data-select': r._id, 'aria-label': 'Select row', title: 'Select (Shift+click to select a range)' }),
+          el('button', { title: 'Delete row', 'aria-label': 'Delete row', 'data-del': r._id }, icon('trash'))),
         el('td', { class: 'bar' }, bar));
       for (const f of fields) {
         const cls = ['cell', f.type === 'longtext' && 'wrap', f.type === 'number' && 'num', f === keyField && 'key'].filter(Boolean).join(' ');
@@ -1467,10 +1486,49 @@
     const i = rows.findIndex(r => r._id === id);
     if (i < 0) return;
     const removed = rows.splice(i, 1)[0];
+    ui.selected.delete(id);
     save();
     render();
     const undo = el('a', { href: '#', onclick: e => { e.preventDefault(); rows.splice(i, 0, removed); save(); render(); $('#toast').hidden = true; } }, 'Undo');
     toast(['Row deleted. ', undo], 6000);
+  }
+
+  function renderBulkBar() {
+    const n = ui.selected.size;
+    $('#bulkBar').hidden = !n;
+    $('#bulkCount').textContent = `${n} row${n === 1 ? '' : 's'} selected`;
+  }
+
+  // Tick a row's checkbox; with Shift, select every visible row between the last tick and this one.
+  function toggleSelect(id, checked, shift) {
+    const vis = visibleRows().map(r => r._id);
+    if (shift && ui.lastSelected != null && vis.includes(ui.lastSelected)) {
+      const [a, b] = [vis.indexOf(ui.lastSelected), vis.indexOf(id)].sort((x, y) => x - y);
+      vis.slice(a, b + 1).forEach(x => (checked ? ui.selected.add(x) : ui.selected.delete(x)));
+    } else if (checked) ui.selected.add(id);
+    else ui.selected.delete(id);
+    ui.lastSelected = id;
+    render();
+  }
+
+  function deleteSelected() {
+    const ids = ui.selected;
+    if (!ids.size) return;
+    // remember positions so Undo puts every row back where it was
+    const removed = rows.map((r, i) => ({ r, i })).filter(x => ids.has(x.r._id));
+    rows = rows.filter(r => !ids.has(r._id));
+    ui.selected = new Set();
+    ui.lastSelected = null;
+    save();
+    render();
+    const undo = el('a', { href: '#', onclick: e => {
+      e.preventDefault();
+      for (const { r, i } of removed) rows.splice(i, 0, r); // ascending order keeps original indices valid
+      save();
+      render();
+      $('#toast').hidden = true;
+    } }, 'Undo');
+    toast([`${removed.length} row${removed.length === 1 ? '' : 's'} deleted. `, undo], 8000);
   }
 
   /* ---------- export ---------- */
@@ -1646,6 +1704,8 @@
     'delete-dashboard': deleteDashboard,
     'edit-mapping': () => openMapping(),
     'add-row': addRow,
+    'delete-selected': deleteSelected,
+    'clear-selection': () => { ui.selected.clear(); ui.lastSelected = null; render(); },
     'clear-filters': () => { ui.filters = {}; ui.search = ''; ui.statFilter = null; $('#search').value = ''; render(); },
     'print': () => window.print(),
     'export-csv': exportCsv,
@@ -1671,6 +1731,9 @@
 
     const sw = e.target.closest('[data-switch]');
     if (sw) { closeMenus(); if (sw.dataset.switch !== store.activeId) activate(sw.dataset.switch); return; }
+
+    const sel = e.target.closest('input[data-select]');
+    if (sel) { toggleSelect(Number(sel.dataset.select), sel.checked, e.shiftKey); return; }
 
     const del = e.target.closest('[data-del]');
     if (del) { deleteRow(Number(del.dataset.del)); return; }

@@ -115,6 +115,11 @@
           </div>
         </div>
         <div id="activeFilters" class="active-filters" hidden></div>
+        <div id="bulkBar" class="bulk-bar" hidden>
+          <span id="bulkCount"></span>
+          <button type="button" class="btn small danger-solid" data-action="delete-selected"><svg class="i"><use href="#i-trash"/></svg>Delete selected</button>
+          <button type="button" class="link" data-action="clear-selection">Clear selection</button>
+        </div>
         <div class="table-wrap">
           <table id="grid">
             <thead></thead>
