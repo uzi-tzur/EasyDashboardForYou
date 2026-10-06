@@ -5,6 +5,8 @@
  *   Field:    { id, source, label, type, show, filter, chart }
  *             type ∈ text | longtext | number | date | badge | tags | status
  *   Stat:     { label, field, value }  → counts visible rows whose field contains value
+ *   colors:      { [field.id]: { value: '#hex' } }  custom value colours
+ *   addedValues: { [field.id]: [value…] }           values defined before any row uses them
  *   rows:     [{ _id, [field.id]: string }]
  */
 (() => {
@@ -88,6 +90,7 @@
     if (!m) {
       m = new Map();
       for (const r of rows) for (const v of valuesOf(field, r)) if (!m.has(v)) m.set(v, m.size);
+      for (const v of template?.addedValues?.[field.id] || []) if (!m.has(v)) m.set(v, m.size);
       slotCache.set(field.id, m);
     }
     const i = m.get(value);
@@ -325,6 +328,7 @@
     mapCtx.stats = (src?.stats || []).map(s => ({ ...s }));
     mapCtx.colors = JSON.parse(JSON.stringify(src?.colors || {}));
     mapCtx.renames = {}; // { fieldId: { oldValue: newValue } }, applied when the dialog is saved
+    mapCtx.added = JSON.parse(JSON.stringify(src?.addedValues || {}));
     mapCtx.accentField = src?.accentField;
     if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
       const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
@@ -408,11 +412,17 @@
   }
 
   // Distinct values of a mapping item, from the imported table or the current rows.
-  function itemValues(it) {
+  function itemDataValues(it) {
     const f = it.field;
     const raw = mapCtx.isNew ? mapCtx.table.rows.map(r => r[it.colIndex]) : rows.map(r => r[f.id]);
     const set = new Set();
     raw.forEach(v => (f.type === 'tags' ? splitTags(v) : [String(v ?? '').trim()]).forEach(x => x && set.add(x)));
+    return set;
+  }
+
+  function itemValues(it) {
+    const set = itemDataValues(it);
+    (mapCtx.added[it.field.id] || []).forEach(v => set.add(v));
     return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }
 
@@ -445,6 +455,8 @@
         return i < CATEGORICAL_SLOTS ? `var(--c${i + 1})` : 'var(--c-neutral)';
       };
       const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
+      const added = mapCtx.added[f.id] || (mapCtx.added[f.id] = []);
+      const used = itemDataValues(it);
       const row = v => {
         const current = custom[v];
         const name = renames[v] ?? v;
@@ -474,15 +486,48 @@
               'aria-label': name, style: `--sw:${hex}`, onclick: () => set(hex)
             })),
             el('label', { class: `swatch custom${current && !COLOR_CHOICES.some(([, h]) => h === current.toLowerCase()) ? ' on' : ''}`, title: 'Custom colour' },
-              el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => set(e.target.value) })))
+              el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => set(e.target.value) })),
+            used.has(v)
+              ? el('span', { class: 'value-remove placeholder' })
+              : el('button', {
+                type: 'button', class: 'value-remove', title: 'Remove this value (not used by any row)', 'aria-label': `Remove ${v}`,
+                onclick: () => {
+                  mapCtx.added[f.id] = added.filter(x => x !== v);
+                  delete custom[v];
+                  delete renames[v];
+                  renderMapColors();
+                }
+              }, icon('x')))
         );
         return r;
       };
-      values.slice(0, 40).forEach(v => list.append(row(v)));
+      // newly added values first so they are easy to find, then the rest
+      const ordered = [...added.filter(v => !used.has(v)).reverse(), ...values.filter(v => used.has(v) || !added.includes(v))];
+      ordered.slice(0, 40).forEach(v => list.append(row(v)));
       const more = values.length > 40 ? el('p', { class: 'muted small-text' }, `Showing the first 40 of ${values.length} values.`) : null;
+
+      const newInput = el('input', { type: 'text', class: 'rename', placeholder: `New ${(f.label || f.source).toLowerCase()} value…`, 'data-add-for': f.id });
+      const addValue = () => {
+        const nv = newInput.value.trim();
+        if (!nv) return;
+        const exists = values.find(x => x.toLowerCase() === nv.toLowerCase()) ||
+          Object.values(renames).find(x => x.toLowerCase() === nv.toLowerCase());
+        if (exists) { addMsg.textContent = `“${exists}” already exists.`; addMsg.hidden = false; return; }
+        added.push(nv);
+        renderMapColors();
+        $(`#mapColors input[data-add-for="${CSS.escape(f.id)}"]`)?.focus();
+      };
+      const addMsg = el('span', { class: 'error small-text', hidden: true });
+      newInput.addEventListener('input', () => { addMsg.hidden = true; });
+      newInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addValue(); } });
+      const addRowEl = el('div', { class: 'color-row add-value' },
+        el('div', { class: 'color-value' }, newInput,
+          el('button', { type: 'button', class: 'btn small', onclick: addValue }, icon('plus'), 'Add value'), addMsg));
+
       box.append(el('div', { class: 'color-field' },
-        el('div', { class: 'color-field-head' }, el('b', {}, f.label || f.source), el('span', { class: 'muted' }, f.type === 'status' ? 'Status' : 'Badge')),
-        values.length ? list : el('p', { class: 'muted small-text' }, 'No values yet.'), more));
+        el('div', { class: 'color-field-head' }, el('b', {}, f.label || f.source), el('span', { class: 'muted' }, f.type === 'status' ? 'Status' : 'Badge'),
+          el('span', { class: 'spacer' }), el('span', { class: 'muted' }, `${values.length} value${values.length === 1 ? '' : 's'}`)),
+        values.length ? list : el('p', { class: 'muted small-text pad' }, 'No values yet. Add one below.'), more, addRowEl));
     }
   }
 
@@ -522,6 +567,7 @@
         }
       }
       if (ui.filters[fid]) ui.filters[fid] = new Set([...ui.filters[fid]].map(to));
+      if (template.addedValues?.[fid]) template.addedValues[fid] = [...new Set(template.addedValues[fid].map(to))];
       for (const s of template.stats) {
         if (s.field !== fid) continue;
         const old = Object.keys(map).find(v => v.toLowerCase() === s.value.trim().toLowerCase());
@@ -540,7 +586,9 @@
       fields,
       stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim()),
       colors: Object.fromEntries(Object.entries(mapCtx.colors)
-        .filter(([id, map]) => fields.some(f => f.id === id) && Object.keys(map).length))
+        .filter(([id, map]) => fields.some(f => f.id === id) && Object.keys(map).length)),
+      addedValues: Object.fromEntries(Object.entries(mapCtx.added)
+        .filter(([id, list]) => fields.some(f => f.id === id) && list.length))
     };
     if (mapCtx.isNew) {
       // a different data set gets its own spreadsheet on the next Google Sheets export
@@ -610,6 +658,7 @@
   function uniqueValues(field) {
     const set = new Set();
     rows.forEach(r => valuesOf(field, r).forEach(v => set.add(v)));
+    (template?.addedValues?.[field.id] || []).forEach(v => set.add(v));
     return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }
 
@@ -912,32 +961,49 @@
       td = $(`#grid tr[data-id="${id}"] td[data-field="${CSS.escape(td.dataset.field)}"]`);
       if (!td) return;
     }
-    if (td.querySelector('input')) return;
+    if (td.querySelector('input, select')) return;
     const tr = td.closest('tr');
     const row = rows.find(r => r._id === Number(tr.dataset.id));
     const f = fieldById(td.dataset.field);
     if (!row || !f) return;
 
     const original = String(row[f.id] ?? '');
-    const input = el('input', { type: 'text', value: original });
-    if (['badge', 'status', 'tags'].includes(f.type)) {
-      const listId = `dl-${f.id}`;
-      $(`#${CSS.escape(listId)}`)?.remove();
-      document.body.append(el('datalist', { id: listId }, uniqueValues(f).map(v => el('option', { value: v }))));
-      input.setAttribute('list', listId);
-      if (f.type === 'tags') input.placeholder = 'Comma-separated';
+    const NEW = '__new_value__';
+    const makeInput = value => {
+      const input = el('input', { type: 'text', value });
+      if (f.type === 'tags') {
+        const listId = `dl-${f.id}`;
+        $(`#${CSS.escape(listId)}`)?.remove();
+        document.body.append(el('datalist', { id: listId }, uniqueValues(f).map(v => el('option', { value: v }))));
+        input.setAttribute('list', listId);
+        input.placeholder = 'Comma-separated';
+      }
+      return input;
+    };
+    let editor;
+    if (f.type === 'status' || f.type === 'badge') {
+      // pick from every known value (including ones added in Field mapping), or type a new one
+      const values = uniqueValues(f);
+      if (original.trim() && !values.includes(original.trim())) values.unshift(original.trim());
+      editor = el('select', { 'aria-label': f.label },
+        el('option', { value: '' }, '— empty —'),
+        values.map(v => el('option', { value: v, selected: v === original.trim() }, v)),
+        el('option', { value: NEW }, '+ New value…'));
+    } else {
+      editor = makeInput(original);
     }
     td.innerHTML = '';
-    td.append(input);
-    input.focus();
-    input.select();
+    td.append(editor);
+    editor.focus();
+    editor.select?.();
 
     let done = false;
     const finish = (commit, moveDir = 0) => {
       if (done) return;
       done = true;
-      if (commit && input.value !== original) {
-        row[f.id] = f.type === 'tags' ? splitTags(input.value).join(', ') : input.value.trim();
+      const value = editor.value === NEW ? original : editor.value;
+      if (commit && value !== original) {
+        row[f.id] = f.type === 'tags' ? splitTags(value).join(', ') : value.trim();
         save();
         render();
       } else {
@@ -950,12 +1016,27 @@
         if (next) startEdit(next);
       }
     };
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-      else if (e.key === 'Tab') { e.preventDefault(); finish(true, e.shiftKey ? -1 : 1); }
-    });
-    input.addEventListener('blur', () => finish(true));
+    const wire = node => {
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Tab') { e.preventDefault(); finish(true, e.shiftKey ? -1 : 1); }
+      });
+      node.addEventListener('blur', () => { if (node === editor) finish(true); });
+    };
+    wire(editor);
+    if (editor.tagName === 'SELECT') {
+      editor.addEventListener('change', () => {
+        if (editor.value !== NEW) { finish(true); return; }
+        // switch to a text box for a brand-new value
+        const input = makeInput('');
+        input.placeholder = `New ${f.label.toLowerCase()}…`;
+        editor = input;
+        wire(input);
+        td.replaceChildren(input);
+        input.focus();
+      });
+    }
   }
 
   function addRow() {

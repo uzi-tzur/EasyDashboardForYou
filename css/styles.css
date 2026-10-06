@@ -289,6 +289,7 @@ th, td { padding: 0 12px; text-align: left; white-space: nowrap; vertical-align:
 #grid td.row-actions button { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
 #grid td.row-actions button svg.i { width: 15px; height: 15px; }
 #grid td.row-actions button:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+#grid td select,
 #grid td input {
   font: inherit; width: 100%; min-width: 140px; height: 30px; padding: 0 8px;
   border: 1px solid var(--primary); border-radius: 6px; background: var(--surface); color: var(--text);
@@ -413,6 +414,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
   font: inherit; font-size: 13px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
 }
 .color-value .rename:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.color-row.add-value { background: var(--surface-2); }
+.color-row.add-value .btn { flex: none; }
+.value-remove { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-left: 4px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.value-remove:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.value-remove svg.i { width: 14px; height: 14px; }
+.value-remove.placeholder { visibility: hidden; }
+.color-field .pad { padding: 8px 12px; margin: 0; }
 .color-value .rename.changed { border-color: var(--primary); background: var(--primary-soft); }
 .color-value .pill { margin: 0; white-space: normal; height: auto; min-height: 22px; padding-top: 3px; padding-bottom: 3px; line-height: 1.3; }
 .swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
