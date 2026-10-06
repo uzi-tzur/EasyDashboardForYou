@@ -67,6 +67,7 @@ Google requires each app to have its own OAuth **Client ID**. A Client ID is a p
 
 Keep as many dashboards as you like. Use **My dashboards** (next to the dashboard title) to:
 - switch between dashboards,
+- **Rename this dashboard**, or open **Rename & reorder dashboards…** to rename any dashboard and drag them into the order you want (Alt+↑/↓ also works),
 - create a **New blank dashboard**,
 - **Duplicate** the current one (same fields, colours, filters and cards, with or without its rows),
 - open **Demo templates**: Release Tracking, Student Records, Project Tasks, Sales Pipeline and Inventory, each usable with sample data or empty,

@@ -212,8 +212,7 @@
     const n = store.list.length;
     $('#dashCount').textContent = n > 1 ? `My dashboards (${n})` : 'My dashboards';
     menu.append(el('div', { class: 'menu-label' }, 'Switch dashboard'));
-    const sorted = [...store.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    for (const d of sorted) {
+    for (const d of store.list) {
       const active = d.id === store.activeId;
       const count = d.rows?.length || 0;
       menu.append(el('button', { 'data-switch': d.id, class: active ? 'current' : '', 'aria-current': active ? 'true' : undefined },
@@ -223,11 +222,62 @@
           el('span', { class: 'dash-item-meta' }, `${count} record${count === 1 ? '' : 's'}`))));
     }
     menu.append(el('hr'),
+      el('button', { 'data-action': 'rename-dashboard' }, icon('sliders'), 'Rename this dashboard'),
+      el('button', { 'data-action': 'manage-dashboards' }, icon('layers'), 'Rename & reorder dashboards…'),
+      el('hr'),
       el('button', { 'data-action': 'new-blank' }, icon('plus'), 'New blank dashboard'),
       el('button', { 'data-action': 'duplicate' }, icon('clipboard'), 'Duplicate this dashboard…'),
       el('button', { 'data-action': 'demo-gallery' }, icon('zap'), 'Demo templates…'),
       el('hr'),
       el('button', { 'data-action': 'delete-dashboard', class: 'danger-item' }, icon('trash'), 'Delete this dashboard…'));
+  }
+
+  // Rename & reorder all dashboards. Changes apply as you type / drag.
+  function openManage() {
+    renderManage();
+    $('#manageDialog').showModal();
+  }
+
+  function renderManage(focusId) {
+    const list = $('#manageList');
+    list.innerHTML = '';
+    const move = (id, dir) => {
+      const i = store.list.findIndex(d => d.id === id), j = i + dir;
+      if (i < 0 || j < 0 || j >= store.list.length) return;
+      [store.list[i], store.list[j]] = [store.list[j], store.list[i]];
+      persist();
+      renderManage(id);
+    };
+    for (const d of store.list) {
+      const active = d.id === store.activeId;
+      const count = d.rows?.length || 0;
+      list.append(el('div', { class: `manage-row drag-row${active ? ' current' : ''}`, 'data-key': d.id },
+        el('span', { class: 'drag-handle', title: 'Drag to reorder (or Alt+↑/↓)', 'aria-hidden': 'true' }, '⋮⋮'),
+        el('input', {
+          type: 'text', class: 'manage-name', value: d.template.title, 'aria-label': 'Dashboard name',
+          oninput: e => { d.template.title = e.target.value; persist(); },
+          onblur: e => {
+            if (!e.target.value.trim()) { d.template.title = 'Untitled dashboard'; e.target.value = d.template.title; persist(); }
+          },
+          onkeydown: e => {
+            if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); move(d.id, e.key === 'ArrowUp' ? -1 : 1); }
+          }
+        }),
+        el('span', { class: 'manage-meta' }, active ? 'Open now' : `${count} record${count === 1 ? '' : 's'}`),
+        active ? el('span', { class: 'manage-open-spacer' }) :
+          el('button', { type: 'button', class: 'btn small', onclick: () => { activate(d.id); renderManage(d.id); } }, 'Open')));
+    }
+    enableDragSort(list, keys => {
+      store.list = keys.map(id => store.list.find(d => d.id === id)).filter(Boolean);
+      persist();
+      renderManage();
+    });
+    if (focusId) $(`#manageList .drag-row[data-key="${CSS.escape(focusId)}"] .manage-name`)?.focus();
+  }
+
+  function renameCurrent() {
+    const title = $('#dashTitle');
+    title.click();
   }
 
   function openDuplicate() {
@@ -1591,6 +1641,8 @@
     }),
     'demo-gallery': openDemoGallery,
     'duplicate': openDuplicate,
+    'manage-dashboards': openManage,
+    'rename-dashboard': renameCurrent,
     'delete-dashboard': deleteDashboard,
     'edit-mapping': () => openMapping(),
     'add-row': addRow,
@@ -1704,6 +1756,10 @@
       btn.textContent = 'Import';
     }
   });
+
+  // Manage dialog: names may have changed; refresh the page title, menu and meta
+  $('#manageForm').addEventListener('submit', e => { e.preventDefault(); $('#manageDialog').close(); render(); });
+  $('#manageDialog').addEventListener('close', () => render());
 
   // Duplicate dialog
   $('#dupForm').addEventListener('submit', e => {

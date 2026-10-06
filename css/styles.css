@@ -516,3 +516,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
 .demo-meta { margin: 0; font-size: 12px; color: var(--muted); }
 .demo-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
 .check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+
+/* ---------- manage dashboards ---------- */
+.manage-dialog { width: min(620px, calc(100vw - 32px)); }
+.manage-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 12px; max-height: 55vh; overflow-y: auto; }
+.manage-row { display: grid; grid-template-columns: 22px 1fr auto 64px; gap: 8px; align-items: center; padding: 8px 10px 8px 6px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.manage-row:last-child { border-bottom: 0; }
+.manage-row.current { background: var(--primary-soft); }
+.manage-name { width: 100%; }
+.manage-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.manage-row.current .manage-meta { color: var(--primary); font-weight: 600; }
