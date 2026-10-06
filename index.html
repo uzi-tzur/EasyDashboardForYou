@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyDashboardForYou</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- SheetJS: reads/writes Excel files -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="dashTitle" class="dash-title" title="Click to rename">EasyDashboardForYou</h1>
+    <div class="actions">
+      <div class="menu">
+        <button class="btn" data-menu="importMenu">Import ▾</button>
+        <div class="menu-list" id="importMenu">
+          <button data-action="import-file">Excel / CSV file…</button>
+          <button data-action="import-gsheet">Google Sheet link…</button>
+          <button data-action="import-paste">Paste from spreadsheet…</button>
+          <hr>
+          <button data-action="load-template">Load template (.json)…</button>
+          <button data-action="load-sample">Load sample: Release Tracking</button>
+        </div>
+      </div>
+      <button class="btn" data-action="edit-mapping">Field mapping</button>
+      <button class="btn" data-action="add-row">+ Add row</button>
+      <button class="btn" data-action="clear-filters">Clear filters</button>
+      <div class="menu">
+        <button class="btn primary" data-menu="exportMenu">Export ▾</button>
+        <div class="menu-list right" id="exportMenu">
+          <label class="menu-check"><input type="checkbox" id="exportVisibleOnly" checked> Visible rows only</label>
+          <hr>
+          <button data-action="export-csv">CSV file</button>
+          <button data-action="export-xlsx">Excel file (.xlsx)</button>
+          <button data-action="export-gsheet">Copy for Google Sheets</button>
+          <hr>
+          <button data-action="save-template">Save template (.json)</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="emptyState" class="empty" hidden>
+      <h2>Build a dashboard from your spreadsheet</h2>
+      <p>Import an Excel, CSV, or Google Sheet, map its columns to dashboard fields, then filter, sort and edit right here.</p>
+      <div class="empty-actions">
+        <button class="btn primary" data-action="import-file">Import Excel / CSV</button>
+        <button class="btn" data-action="import-gsheet">Google Sheet link</button>
+        <button class="btn" data-action="import-paste">Paste data</button>
+        <button class="btn" data-action="load-sample">Try the sample</button>
+      </div>
+      <p class="hint">Tip: you can also drag &amp; drop a file anywhere on this page.</p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div id="stats" class="stats"></div>
+      <div class="filterbar">
+        <div id="filters" class="filters"></div>
+        <input id="search" class="search" type="search" placeholder="Search…">
+      </div>
+      <div class="table-wrap">
+        <table id="grid">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="footnote">Click a cell to edit · Enter to save · Esc to cancel · Changes are saved in this browser automatically.</p>
+    </section>
+  </main>
+
+  <!-- Field mapping dialog -->
+  <dialog id="mappingDialog" class="dialog wide">
+    <form method="dialog" id="mappingForm">
+      <h2>Field mapping</h2>
+      <p class="muted">Choose which source columns appear on the dashboard, what they are called, and how they are displayed.</p>
+      <label class="field">Dashboard title
+        <input id="mapTitle" type="text" required>
+      </label>
+      <div class="table-wrap small">
+        <table class="map-table">
+          <thead>
+            <tr><th>Show</th><th></th><th>Source column</th><th>Dashboard field name</th><th>Display as</th><th>Filter</th><th>Sample</th></tr>
+          </thead>
+          <tbody id="mapRows"></tbody>
+        </table>
+      </div>
+      <div class="map-grid">
+        <label class="field">Row colour bar follows
+          <select id="mapAccent"></select>
+        </label>
+        <label class="field">Search placeholder
+          <input id="mapSearchHint" type="text">
+        </label>
+      </div>
+      <h3>Summary cards</h3>
+      <p class="muted">“Visible records” is always shown. Add cards that count rows where a field contains a value.</p>
+      <div id="mapStats"></div>
+      <button type="button" class="btn small" id="addStat">+ Add card</button>
+      <div class="dialog-actions">
+        <button type="button" class="btn" value="cancel" id="mapCancel">Cancel</button>
+        <button type="submit" class="btn primary" value="ok">Build dashboard</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Google Sheet dialog -->
+  <dialog id="gsheetDialog" class="dialog">
+    <form method="dialog" id="gsheetForm">
+      <h2>Import from Google Sheets</h2>
+      <p class="muted">Paste the sheet link. The sheet must be shared as <b>“Anyone with the link can view”</b> (or published to the web). The tab in the link (gid) is the one imported.</p>
+      <label class="field">Sheet URL
+        <input id="gsheetUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=0" required>
+      </label>
+      <p id="gsheetError" class="error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Import</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Paste dialog -->
+  <dialog id="pasteDialog" class="dialog">
+    <form method="dialog" id="pasteForm">
+      <h2>Paste from a spreadsheet</h2>
+      <p class="muted">Select the cells in Excel or Google Sheets (including the header row), copy, and paste below.</p>
+      <textarea id="pasteText" rows="10" placeholder="Paste here…" required></textarea>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsm,.ods" hidden>
+  <input type="file" id="templateInput" accept=".json,application/json" hidden>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="js/sample.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
