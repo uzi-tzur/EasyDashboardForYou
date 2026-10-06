@@ -21,6 +21,10 @@
     ['status', 'Status']
   ];
   const CATEGORICAL_SLOTS = 8;
+  const COLOR_CHOICES = [
+    ['Green', '#0ca30c'], ['Blue', '#2a78d6'], ['Amber', '#fab219'], ['Orange', '#eb6834'], ['Red', '#d03b3b'],
+    ['Purple', '#7c5cd6'], ['Teal', '#1baf7a'], ['Pink', '#e87ba4'], ['Grey', '#898781']
+  ];
   const CHART_MAX_BARS = 8;
   const TAG_SPLIT = /\s*[,;|\n]\s*/;
 
@@ -90,7 +94,11 @@
     return i === undefined || i >= CATEGORICAL_SLOTS ? null : i + 1;
   }
 
+  const colorOverride = (field, value) => (field && template?.colors?.[field.id]?.[value]) || null;
+
   function colorVar(field, value) {
+    const custom = colorOverride(field, value);
+    if (custom) return custom;
     if (field?.type === 'status') return `var(--s-${statusRole(value)})`;
     const slot = field ? slotFor(field, value) : null;
     return slot ? `var(--c${slot})` : 'var(--c-neutral)';
@@ -315,6 +323,7 @@
     const src = table ? base : template;
     $('#mapSearchHint').value = src?.searchHint || 'Search…';
     mapCtx.stats = (src?.stats || []).map(s => ({ ...s }));
+    mapCtx.colors = JSON.parse(JSON.stringify(src?.colors || {}));
     mapCtx.accentField = src?.accentField;
     if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
       const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
@@ -323,6 +332,7 @@
     }
     renderSheetPicker();
     renderMapRows();
+    renderMapColors();
     renderMapStats();
     $('#mappingDialog').showModal();
   }
@@ -337,6 +347,7 @@
           mapCtx.table = sheetToTable(mapCtx.workbook, mapCtx.sheet);
           mapCtx.items = buildMapItems(mapCtx.table, mapCtx.base);
           renderMapRows();
+          renderMapColors();
           renderMapStats();
         } catch (err) { toast(err.message); }
       }
@@ -356,7 +367,7 @@
           el('button', { type: 'button', class: 'move', title: 'Move down', onclick: () => moveItem(idx, 1) }, '↓')),
         el('td', {}, f.source),
         el('td', {}, el('input', { type: 'text', value: f.label, oninput: e => { f.label = e.target.value; refreshFieldSelects(); } })),
-        el('td', {}, el('select', { onchange: e => { f.type = e.target.value; } },
+        el('td', {}, el('select', { onchange: e => { f.type = e.target.value; renderMapColors(); } },
           TYPES.map(([v, l]) => el('option', { value: v, selected: v === f.type }, l)))),
         el('td', {}, el('input', { type: 'checkbox', checked: f.filter, onchange: e => { f.filter = e.target.checked; } })),
         el('td', {}, el('input', { type: 'checkbox', checked: !!f.chart, title: 'Show a breakdown chart for this field', onchange: e => { f.chart = e.target.checked; } })),
@@ -395,6 +406,72 @@
     });
   }
 
+  // Distinct values of a mapping item, from the imported table or the current rows.
+  function itemValues(it) {
+    const f = it.field;
+    const raw = mapCtx.isNew ? mapCtx.table.rows.map(r => r[it.colIndex]) : rows.map(r => r[f.id]);
+    const set = new Set();
+    raw.forEach(v => (f.type === 'tags' ? splitTags(v) : [String(v ?? '').trim()]).forEach(x => x && set.add(x)));
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }
+
+  function resolveCssColor(value) {
+    const probe = el('span', { style: `color:${value}; display:none` });
+    document.body.append(probe);
+    const rgb = getComputedStyle(probe).color.match(/\d+/g) || [0, 0, 0];
+    probe.remove();
+    return '#' + rgb.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+  }
+
+  function renderMapColors() {
+    const box = $('#mapColors');
+    box.innerHTML = '';
+    const items = mapCtx.items.filter(it => it.field.type === 'status' || it.field.type === 'badge')
+      .sort((a, b) => (b.field.type === 'status') - (a.field.type === 'status'));
+    if (!items.length) {
+      box.append(el('p', { class: 'muted' }, 'No Status or Badge fields yet. Set a field’s “Display as” to Status or Badge to colour its values.'));
+      return;
+    }
+    for (const it of items) {
+      const f = it.field;
+      const values = itemValues(it);
+      const custom = mapCtx.colors[f.id] || (mapCtx.colors[f.id] = {});
+      const list = el('div', { class: 'color-list' });
+      const auto = v => {
+        // preview what Auto would give without the override
+        if (f.type === 'status') return `var(--s-${statusRole(v)})`;
+        const i = values.indexOf(v);
+        return i < CATEGORICAL_SLOTS ? `var(--c${i + 1})` : 'var(--c-neutral)';
+      };
+      const row = v => {
+        const current = custom[v];
+        const preview = el('span', { class: f.type === 'status' ? 'pill status' : 'pill' }, v);
+        preview.style.setProperty('--k', current || auto(v));
+        const set = color => {
+          if (color) custom[v] = color; else delete custom[v];
+          list.replaceChild(row(v), r);
+        };
+        const r = el('div', { class: 'color-row' },
+          el('div', { class: 'color-value' }, preview),
+          el('div', { class: 'swatches' },
+            el('button', { type: 'button', class: `swatch auto${current ? '' : ' on'}`, title: 'Auto', onclick: () => set(null) }, 'Auto'),
+            COLOR_CHOICES.map(([name, hex]) => el('button', {
+              type: 'button', class: `swatch${current?.toLowerCase() === hex ? ' on' : ''}`, title: name,
+              'aria-label': name, style: `--sw:${hex}`, onclick: () => set(hex)
+            })),
+            el('label', { class: `swatch custom${current && !COLOR_CHOICES.some(([, h]) => h === current.toLowerCase()) ? ' on' : ''}`, title: 'Custom colour' },
+              el('input', { type: 'color', value: current || resolveCssColor(auto(v)), onchange: e => set(e.target.value) })))
+        );
+        return r;
+      };
+      values.slice(0, 40).forEach(v => list.append(row(v)));
+      const more = values.length > 40 ? el('p', { class: 'muted small-text' }, `Showing the first 40 of ${values.length} values.`) : null;
+      box.append(el('div', { class: 'color-field' },
+        el('div', { class: 'color-field-head' }, el('b', {}, f.label || f.source), el('span', { class: 'muted' }, f.type === 'status' ? 'Status' : 'Badge')),
+        values.length ? list : el('p', { class: 'muted small-text' }, 'No values yet.'), more));
+    }
+  }
+
   function renderMapStats() {
     const box = $('#mapStats');
     box.innerHTML = '';
@@ -419,7 +496,9 @@
       searchHint: $('#mapSearchHint').value.trim() || 'Search…',
       accentField: mapCtx.accentField || '',
       fields,
-      stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim())
+      stats: mapCtx.stats.filter(s => s.label.trim() && s.value.trim()),
+      colors: Object.fromEntries(Object.entries(mapCtx.colors)
+        .filter(([id, map]) => fields.some(f => f.id === id) && Object.keys(map).length))
     };
     if (mapCtx.isNew) {
       // a different data set gets its own spreadsheet on the next Google Sheets export
@@ -545,7 +624,8 @@
       const f = fieldById(s.field);
       if (!f) return;
       const n = vis.filter(r => statMatches(s, r)).length;
-      const k = f.type === 'status' ? `var(--s-${statusRole(s.value)})` : 'var(--c1)';
+      const exact = Object.keys(template.colors?.[f.id] || {}).find(v => v.toLowerCase() === s.value.trim().toLowerCase());
+      const k = exact ? colorOverride(f, exact) : f.type === 'status' ? `var(--s-${statusRole(s.value)})` : 'var(--c1)';
       const active = ui.statFilter === i;
       box.append(el('button', {
         type: 'button',
