@@ -87,9 +87,9 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   backdrop-filter: saturate(1.4) blur(10px);
   border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
-.brand-mark { width: 36px; height: 36px; border-radius: 9px; background: #fff; box-shadow: 0 0 0 1px var(--border); object-fit: contain; }
-.brand-name { font-size: 16px; font-weight: 800; letter-spacing: -.02em; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.brand-mark { width: 56px; height: 56px; border-radius: 12px; background: #fff; box-shadow: 0 0 0 1px var(--border); object-fit: contain; }
+.brand-name { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
 .brand-name .w1 { color: var(--brand-1); }
 .brand-name .w2 { color: var(--brand-2); }
 .brand-name .w3 { color: var(--brand-3); }
@@ -373,6 +373,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
   main { padding: 0 16px 32px; }
   .topbar { padding: 10px 16px; }
   .brand { flex: 1 1 100%; }
+  .brand-mark { width: 46px; height: 46px; border-radius: 10px; }
+  .brand-name { font-size: 17px; }
   .actions { flex: 1 1 100%; justify-content: flex-end; }
   .btn .lbl { display: none; }
   .search-box, .search { width: 100%; }
