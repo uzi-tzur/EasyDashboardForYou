@@ -2,9 +2,11 @@
 
 Turn any spreadsheet into a filterable, sortable, editable dashboard, then export it back.
 
+**Live app:** https://uzi-tzur.github.io/EasyDashboardForYou/
+
 ## Run it
 
-You can double-click `index.html` to open it, or serve the folder (recommended, because Google Sheets import needs it):
+Use the live app above, or run it locally. You can double-click `index.html` to open it, or serve the folder (recommended, because Google Sheets import needs it):
 
 ```bash
 python -m http.server 8765
