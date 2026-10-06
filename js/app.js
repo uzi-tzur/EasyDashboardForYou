@@ -723,6 +723,7 @@
     tbody.innerHTML = '';
 
     thead.append(el('tr', {},
+      el('th', { class: 'row-actions', 'aria-label': 'Row actions' }),
       el('th', { class: 'bar' }),
       fields.map(f => {
         const s = ui.sort?.field === f.id ? ui.sort.dir : 0;
@@ -737,8 +738,7 @@
             render();
           }
         }, f.label, el('span', { class: 'arrow' }, s === 1 ? '▲' : s === -1 ? '▼' : '▲'));
-      }),
-      el('th', { class: 'row-actions' })
+      })
     ));
 
     if (!vis.length) {
@@ -756,14 +756,15 @@
         bar.style.setProperty('--k', colorVar(accent, accentValue));
         bar.title = `${accent.label}: ${accentValue}`;
       }
-      const tr = el('tr', { 'data-id': r._id }, el('td', { class: 'bar' }, bar));
+      const tr = el('tr', { 'data-id': r._id },
+        el('td', { class: 'row-actions' }, el('button', { title: 'Delete row', 'aria-label': 'Delete row', 'data-del': r._id }, icon('trash'))),
+        el('td', { class: 'bar' }, bar));
       for (const f of fields) {
         const cls = ['cell', f.type === 'longtext' && 'wrap', f.type === 'number' && 'num', f === keyField && 'key'].filter(Boolean).join(' ');
         const td = el('td', { class: cls, 'data-field': f.id });
         fillCell(td, f, r[f.id]);
         tr.append(td);
       }
-      tr.append(el('td', { class: 'row-actions' }, el('button', { title: 'Delete row', 'aria-label': 'Delete row', 'data-del': r._id }, icon('trash'))));
       tbody.append(tr);
     }
   }

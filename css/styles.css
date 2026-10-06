@@ -282,9 +282,12 @@ th, td { padding: 0 12px; text-align: left; white-space: nowrap; vertical-align:
 #grid td.bar i { display: block; width: 3px; height: 24px; margin-left: 6px; border-radius: 2px; background: var(--k, transparent); }
 #grid td.cell { cursor: text; }
 #grid td.cell:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
-#grid td.row-actions { width: 40px; text-align: center; padding: 0 6px; }
-#grid td.row-actions button { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: 0; }
-#grid tr:hover td.row-actions button { opacity: 1; }
+/* delete column: left edge, always visible, stays put when the table scrolls sideways */
+#grid .row-actions { position: sticky; left: 0; z-index: 1; width: 44px; min-width: 44px; text-align: center; padding: 0 4px 0 8px; background: var(--surface); }
+#grid th.row-actions { z-index: 3; background: var(--surface-2); }
+#grid tbody tr:hover td.row-actions { background: var(--surface-2); }
+#grid td.row-actions button { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
+#grid td.row-actions button svg.i { width: 15px; height: 15px; }
 #grid td.row-actions button:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 #grid td input {
   font: inherit; width: 100%; min-width: 140px; height: 30px; padding: 0 8px;
