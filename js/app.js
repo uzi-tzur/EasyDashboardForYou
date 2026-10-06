@@ -7,6 +7,7 @@
  *   Stat:     { label, field, value }  → counts visible rows whose field contains value
  *   colors:      { [field.id]: { value: '#hex' } }  custom value colours
  *   addedValues: { [field.id]: [value…] }           values defined before any row uses them
+ *   valueOrder:  { [field.id]: [value…] }           custom order of values (filters, dropdowns, charts, sorting)
  *   rows:     [{ _id, [field.id]: string }]
  */
 (() => {
@@ -330,6 +331,7 @@
     mapCtx.renames = {}; // { fieldId: { oldValue: newValue } }, applied when the dialog is saved
     mapCtx.added = JSON.parse(JSON.stringify(src?.addedValues || {}));
     mapCtx.deletes = {}; // { fieldId: { value: replacement ('' = leave empty) } }, applied on save
+    mapCtx.order = JSON.parse(JSON.stringify(src?.valueOrder || {})); // { fieldId: [value…] }
     mapCtx.accentField = src?.accentField;
     if (!mapCtx.items.some(it => typeof it.field.chart === 'boolean')) {
       const accent = mapCtx.accentField || mapCtx.items.find(it => it.field.type === 'status')?.field.id;
@@ -460,6 +462,30 @@
       };
       const renames = mapCtx.renames[f.id] || (mapCtx.renames[f.id] = {});
       const added = mapCtx.added[f.id] || (mapCtx.added[f.id] = []);
+      // current order: the custom order (if any), then remaining values alphabetically
+      const custom_order = mapCtx.order[f.id];
+      const ordered = custom_order?.length
+        ? [...custom_order.filter(v => values.includes(v)), ...values.filter(v => !custom_order.includes(v))]
+        : values;
+      const move = (v, dir) => {
+        const arr = [...ordered];
+        const i = arr.indexOf(v), j = i + dir;
+        if (i < 0 || j < 0 || j >= arr.length) return;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        mapCtx.order[f.id] = arr;
+        renderMapColors();
+        // keep keyboard focus on the moved value (on the other arrow once it reaches the top/bottom)
+        const moved = $(`#mapColors .color-field[data-field="${CSS.escape(f.id)}"] .color-row[data-value="${CSS.escape(v)}"]`);
+        const same = moved?.querySelector(`.move-${dir < 0 ? 'up' : 'down'}`);
+        (same && !same.disabled ? same : moved?.querySelector(`.move-${dir < 0 ? 'down' : 'up'}`))?.focus();
+      };
+      const reorder = v => {
+        const i = ordered.indexOf(v);
+        return el('span', { class: 'reorder' },
+          el('span', { class: 'drag-handle', title: 'Drag to reorder', 'aria-hidden': 'true' }, '⋮⋮'),
+          el('button', { type: 'button', class: 'move move-up', title: 'Move up', 'aria-label': `Move ${v} up`, disabled: i <= 0, onclick: () => move(v, -1) }, '↑'),
+          el('button', { type: 'button', class: 'move move-down', title: 'Move down', 'aria-label': `Move ${v} down`, disabled: i >= ordered.length - 1, onclick: () => move(v, 1) }, '↓'));
+      };
       const deletes = mapCtx.deletes[f.id] || (mapCtx.deletes[f.id] = {});
       const counts = itemValueCounts(it);
       const used = new Set(counts.keys());
@@ -469,7 +495,7 @@
       const deletedRow = v => {
         const n = counts.get(v) || 0;
         const others = values.filter(x => x !== v && !(x in deletes));
-        const r = el('div', { class: 'color-row deleted' },
+        const r = el('div', { class: 'color-row deleted', 'data-value': v },
           el('div', { class: 'color-value' },
             el('span', { class: 'deleted-name' }, shownName(v)),
             el('span', { class: 'muted small-text' }, `Will be deleted · ${n} row${n === 1 ? '' : 's'} use it`)),
@@ -504,8 +530,8 @@
           if (color) custom[v] = color; else delete custom[v];
           list.replaceChild(row(v), r);
         };
-        const r = el('div', { class: 'color-row' },
-          el('div', { class: 'color-value' }, rename, preview),
+        const r = el('div', { class: 'color-row', 'data-value': v },
+          el('div', { class: 'color-value' }, reorder(v), rename, preview),
           el('div', { class: 'swatches' },
             el('button', { type: 'button', class: `swatch auto${current ? '' : ' on'}`, title: 'Auto', onclick: () => set(null) }, 'Auto'),
             COLOR_CHOICES.map(([name, hex]) => el('button', {
@@ -533,9 +559,8 @@
         );
         return r;
       };
-      // newly added values first so they are easy to find, then the rest
-      const ordered = [...added.filter(v => !used.has(v)).reverse(), ...values.filter(v => used.has(v) || !added.includes(v))];
       ordered.slice(0, 40).forEach(v => list.append(row(v)));
+      enableDragSort(list, f.id);
       const more = values.length > 40 ? el('p', { class: 'muted small-text' }, `Showing the first 40 of ${values.length} values.`) : null;
 
       const newInput = el('input', { type: 'text', class: 'rename', placeholder: `New ${(f.label || f.source).toLowerCase()} value…`, 'data-add-for': f.id });
@@ -546,6 +571,7 @@
           Object.values(renames).find(x => x.toLowerCase() === nv.toLowerCase());
         if (exists) { addMsg.textContent = `“${exists}” already exists.`; addMsg.hidden = false; return; }
         added.push(nv);
+        if (mapCtx.order[f.id]?.length) mapCtx.order[f.id].push(nv);
         renderMapColors();
         $(`#mapColors input[data-add-for="${CSS.escape(f.id)}"]`)?.focus();
       };
@@ -556,11 +582,53 @@
         el('div', { class: 'color-value' }, newInput,
           el('button', { type: 'button', class: 'btn small', onclick: addValue }, icon('plus'), 'Add value'), addMsg));
 
-      box.append(el('div', { class: 'color-field' },
+      box.append(el('div', { class: 'color-field', 'data-field': f.id },
         el('div', { class: 'color-field-head' }, el('b', {}, f.label || f.source), el('span', { class: 'muted' }, f.type === 'status' ? 'Status' : 'Badge'),
-          el('span', { class: 'spacer' }), el('span', { class: 'muted' }, `${values.length} value${values.length === 1 ? '' : 's'}`)),
+          el('span', { class: 'spacer' }),
+          custom_order?.length
+            ? el('button', { type: 'button', class: 'link', title: 'Reset to alphabetical order', onclick: () => { delete mapCtx.order[f.id]; renderMapColors(); } }, 'Reset order (A–Z)')
+            : el('span', { class: 'muted small-text' }, 'A–Z · use ↑↓ or drag to reorder'),
+          el('span', { class: 'muted' }, `${values.length} value${values.length === 1 ? '' : 's'}`)),
         values.length ? list : el('p', { class: 'muted small-text pad' }, 'No values yet. Add one below.'), more, addRowEl));
     }
+  }
+
+  // Drag rows by their handle to reorder values within one field.
+  function enableDragSort(list, fieldId) {
+    let dragging = null;
+    list.addEventListener('pointerdown', e => {
+      const row = e.target.closest('.drag-handle')?.closest('.color-row');
+      if (row) row.draggable = true;
+    });
+    list.addEventListener('pointerup', () => {
+      if (!dragging) list.querySelectorAll('.color-row[draggable="true"]').forEach(r => { r.draggable = false; });
+    });
+    list.addEventListener('dragstart', e => {
+      dragging = e.target.closest('.color-row');
+      if (!dragging) return;
+      dragging.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragging.dataset.value);
+    });
+    list.addEventListener('dragover', e => {
+      if (!dragging) return;
+      e.preventDefault();
+      const over = e.target.closest('.color-row');
+      if (!over || over === dragging || over.parentNode !== list) return;
+      const before = e.clientY < over.getBoundingClientRect().top + over.offsetHeight / 2;
+      list.insertBefore(dragging, before ? over : over.nextSibling);
+    });
+    list.addEventListener('dragend', () => {
+      if (!dragging) return;
+      dragging.classList.remove('dragging');
+      dragging.draggable = false;
+      dragging = null;
+      const shown = [...list.querySelectorAll('.color-row[data-value]')].map(r => r.dataset.value);
+      const prev = mapCtx.order[fieldId] || [];
+      // values beyond the first 40 shown keep their relative order after the visible ones
+      mapCtx.order[fieldId] = [...shown, ...prev.filter(v => !shown.includes(v))];
+      renderMapColors();
+    });
   }
 
   function renderMapStats() {
@@ -614,6 +682,7 @@
       }
       if (ui.filters[fid]) ui.filters[fid] = new Set([...ui.filters[fid]].map(to).filter(Boolean));
       if (template.addedValues?.[fid]) template.addedValues[fid] = [...new Set(template.addedValues[fid].map(to).filter(Boolean))];
+      if (template.valueOrder?.[fid]) template.valueOrder[fid] = [...new Set(template.valueOrder[fid].map(to).filter(Boolean))];
       for (const s of template.stats) {
         if (s.field !== fid) continue;
         const old = Object.keys(map).find(v => v.toLowerCase() === s.value.trim().toLowerCase());
@@ -634,7 +703,9 @@
       colors: Object.fromEntries(Object.entries(mapCtx.colors)
         .filter(([id, map]) => fields.some(f => f.id === id) && Object.keys(map).length)),
       addedValues: Object.fromEntries(Object.entries(mapCtx.added)
-        .filter(([id, list]) => fields.some(f => f.id === id) && list.length))
+        .filter(([id, list]) => fields.some(f => f.id === id) && list.length)),
+      valueOrder: Object.fromEntries(Object.entries(mapCtx.order)
+        .filter(([id, list]) => fields.some(f => f.id === id) && list?.length))
     };
     if (mapCtx.isNew) {
       // a different data set gets its own spreadsheet on the next Google Sheets export
@@ -687,6 +758,10 @@
         const v = String(r[f.id] ?? '');
         if (f.type === 'number') return parseFloat(v.replace(/[,%]/g, ''));
         if (f.type === 'date') return Date.parse(v);
+        if (hasCustomOrder(f) && (f.type === 'status' || f.type === 'badge')) {
+          const i = template.valueOrder[f.id].indexOf(v.trim());
+          return v.trim() ? (i < 0 ? template.valueOrder[f.id].length : i) : NaN; // empty sorts last
+        }
         return v;
       };
       out = out.slice().sort((a, b) => {
@@ -703,11 +778,23 @@
     return out;
   }
 
+  const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+  // Sort values by the field's custom order (if set); values not in it follow alphabetically.
+  function orderValues(field, values) {
+    const order = template?.valueOrder?.[field.id];
+    if (!order?.length) return [...values].sort(byName);
+    const rank = new Map(order.map((v, i) => [v, i]));
+    return [...values].sort((a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity) || byName(a, b));
+  }
+
+  const hasCustomOrder = field => !!template?.valueOrder?.[field.id]?.length;
+
   function uniqueValues(field) {
     const set = new Set();
     rows.forEach(r => valuesOf(field, r).forEach(v => set.add(v)));
     (template?.addedValues?.[field.id] || []).forEach(v => set.add(v));
-    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return orderValues(field, set);
   }
 
   /* ---------- rendering ---------- */
@@ -819,7 +906,9 @@
       const counts = new Map();
       base.forEach(r => valuesOf(f, r).forEach(v => counts.set(v, (counts.get(v) || 0) + 1)));
       if (!counts.size) continue;
-      const entries = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { numeric: true }));
+      const entries = hasCustomOrder(f)
+        ? orderValues(f, counts.keys()).map(v => [v, counts.get(v)])
+        : [...counts].sort((a, b) => b[1] - a[1] || byName(a[0], b[0]));
       const top = entries.slice(0, CHART_MAX_BARS);
       const rest = entries.slice(CHART_MAX_BARS);
       const max = top[0][1];
