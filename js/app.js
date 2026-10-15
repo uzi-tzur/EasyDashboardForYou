@@ -1692,6 +1692,81 @@
     }
   }
 
+  /* ---------- PowerPoint → HTML dashboard ---------- */
+
+  const ppt = { file: null, html: '', url: null, name: '' };
+
+  function openPptDialog(file) {
+    const box = $('#pptThemes');
+    if (!box.children.length) {
+      Object.entries(window.PptDashboard?.THEMES || {}).forEach(([key, th], i) => {
+        const dot = el('i');
+        dot.style.background = `linear-gradient(135deg, ${th.a}, ${th.b})`;
+        box.append(el('label', { class: 'ppt-swatch' }, el('input', { type: 'radio', name: 'pptTheme', value: key, ...(i ? {} : { checked: '' }) }), dot, th.name));
+      });
+    }
+    if (!$('#pptDialog').open) $('#pptDialog').showModal();
+    if (file) setPptFile(file);
+  }
+
+  function setPptFile(file) {
+    ppt.file = file;
+    $('#pptFileName').textContent = file.name;
+    $('#pptDrop').classList.add('has-file');
+    pptStatus('');
+  }
+
+  function pptStatus(msg, isError) {
+    const s = $('#pptStatus');
+    s.hidden = !msg;
+    s.textContent = msg;
+    s.classList.toggle('error', !!isError);
+  }
+
+  async function generatePpt() {
+    if (!ppt.file) { pptStatus('Choose a .pptx file first.', true); return; }
+    if (!window.PptDashboard) { pptStatus('The PowerPoint converter could not load. Reload the page and try again.', true); return; }
+    const go = $('#pptGo');
+    go.disabled = true;
+    pptStatus(`Reading ${ppt.file.name}…`);
+    try {
+      const deck = await PptDashboard.parse(ppt.file);
+      const theme = ($('input[name="pptTheme"]:checked') || {}).value;
+      ppt.html = PptDashboard.build(deck, { title: $('#pptTitle').value, theme });
+      ppt.name = `${($('#pptTitle').value.trim() || ppt.file.name.replace(/\.pptx?$/i, '')).replace(/[\\/:*?"<>|]+/g, '-')} dashboard.html`;
+      if (ppt.url) URL.revokeObjectURL(ppt.url);
+      ppt.url = URL.createObjectURL(new Blob([ppt.html], { type: 'text/html' }));
+      $('#pptPreview').srcdoc = ppt.html;
+      $('#pptPreviewWrap').hidden = false;
+      $('#pptOpen').hidden = $('#pptDownload').hidden = false;
+      go.lastChild.textContent = 'Regenerate';
+      const kb = Math.round(ppt.html.length / 1024);
+      pptStatus(`Done: ${deck.slides.length} slides → a single ${kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`} HTML file. Preview below.`);
+    } catch (err) {
+      pptStatus(err.message, true);
+    } finally {
+      go.disabled = false;
+    }
+  }
+
+  $('#pptForm').addEventListener('submit', e => { e.preventDefault(); generatePpt(); });
+  $('#pptInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) setPptFile(f); e.target.value = ''; });
+  $('#pptDownload').addEventListener('click', () => download(ppt.name, ppt.html, 'text/html'));
+  $('#pptOpen').addEventListener('click', () => window.open(ppt.url, '_blank', 'noopener'));
+  $('#pptDialog').addEventListener('change', e => { if (e.target.name === 'pptTheme' && ppt.html) generatePpt(); });
+  const pptDrop = $('#pptDrop');
+  pptDrop.addEventListener('dragover', e => { e.preventDefault(); pptDrop.classList.add('over'); });
+  pptDrop.addEventListener('dragleave', () => pptDrop.classList.remove('over'));
+  pptDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    pptDrop.classList.remove('over');
+    dragDepth = 0;
+    document.body.classList.remove('dragging');
+    const f = e.dataTransfer?.files[0];
+    if (f) setPptFile(f);
+  });
+
   /* ---------- wiring ---------- */
 
   function closeMenus() {
@@ -1703,6 +1778,7 @@
     'import-file': () => $('#fileInput').click(),
     'import-gsheet': () => { $('#gsheetError').hidden = true; $('#gsheetDialog').showModal(); },
     'import-paste': () => { $('#pasteText').value = ''; $('#pasteDialog').showModal(); },
+    'import-ppt': () => openPptDialog(),
     'load-template': () => $('#templateInput').click(),
     'new-blank': () => openMapping({
       table: { headers: ['Name', 'Status'], rows: [] },
@@ -1878,7 +1954,9 @@
     document.body.classList.remove('dragging');
     const f = e.dataTransfer?.files[0];
     if (!f) return;
-    if (/\.json$/i.test(f.name)) loadTemplate(f); else importFile(f);
+    if (/\.json$/i.test(f.name)) loadTemplate(f);
+    else if (/\.pptx?$/i.test(f.name)) openPptDialog(f);
+    else importFile(f);
   });
 
   load();

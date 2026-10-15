@@ -82,6 +82,20 @@ Importing a different spreadsheet creates a new dashboard. Re-importing the same
 
 `samples/` contains the Release Tracking example as a CSV plus its template.
 
+## PowerPoint → HTML dashboard
+
+*Import → PowerPoint → HTML dashboard* (or drop a `.pptx` on the page) turns a slide deck into a single, self-contained HTML page you can share:
+
+- hero section (first slide's title and subtitle, the largest picture in the deck),
+- KPI summary cards (numbers found in the slides, with count-up animation),
+- purpose and employee-value sections,
+- community content themes (one card per topic slide),
+- engagement & impact charts (native PowerPoint charts are redrawn; otherwise numbers from the text),
+- next steps for managers,
+- every picture embedded, so no separate image files are needed.
+
+Slides are sorted into sections by their titles (English and Hebrew; Hebrew decks are laid out right-to-left). Anything that doesn't come from the deck, such as sample engagement charts or suggested manager steps, is badged **Illustrative** and explained in a note. Everything runs in the browser; the file is never uploaded. Old `.ppt` files must be saved as `.pptx` first.
+
 ## Publishing updates
 
 Production runs on Vercel (project `easydashboardforyou` in the `uzitzurai-2779` account). Deploy with `vercel deploy --prod` from this folder while signed in to that account.
@@ -98,6 +112,7 @@ Production runs on Vercel (project `easydashboardforyou` in the `uzitzurai-2779`
 | `js/app.js` | Import, mapping, rendering, editing, export |
 | `js/google-sheets.js` | Google sign-in and direct Sheets export |
 | `js/config.js` | Settings (Google Client ID) |
+| `js/ppt-dashboard.js` | PowerPoint (.pptx) → standalone HTML dashboard |
 | `js/demos.js` | Demo templates (Release Tracking, Student Records, Project Tasks, Sales Pipeline, Inventory) |
 
 ---

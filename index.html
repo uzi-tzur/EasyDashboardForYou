@@ -8,9 +8,11 @@
   <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="css/styles.css?v=2026.10.06.2">
+  <link rel="stylesheet" href="css/styles.css?v=2026.10.15.1">
   <!-- SheetJS: reads/writes Excel files -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- JSZip: reads PowerPoint (.pptx) files -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
   <!-- Icon sprite -->
@@ -31,6 +33,7 @@
     <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol>
     <symbol id="i-print" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
     <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
     <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
   </svg>
 
@@ -50,6 +53,9 @@
           <button data-action="import-file"><svg class="i"><use href="#i-file"/></svg>Excel / CSV file…</button>
           <button data-action="import-gsheet"><svg class="i"><use href="#i-link"/></svg>Google Sheet link…</button>
           <button data-action="import-paste"><svg class="i"><use href="#i-clipboard"/></svg>Paste from spreadsheet…</button>
+          <hr>
+          <div class="menu-label">Presentation</div>
+          <button data-action="import-ppt"><svg class="i"><use href="#i-sparkle"/></svg>PowerPoint → HTML dashboard…</button>
           <hr>
           <div class="menu-label">Setup</div>
           <button data-action="load-template"><svg class="i"><use href="#i-layers"/></svg>Load template (.json)…</button>
@@ -87,6 +93,7 @@
         <button class="btn" data-action="import-paste">Paste data</button>
         <button class="btn" data-action="new-blank">Start from scratch</button>
         <button class="btn" data-action="demo-gallery">Use a demo template</button>
+        <button class="btn" data-action="import-ppt"><svg class="i"><use href="#i-sparkle"/></svg>PowerPoint → HTML dashboard</button>
       </div>
       <p class="hint">Tip: you can also drag &amp; drop a file anywhere on this page.</p>
     </section>
@@ -277,6 +284,43 @@
     </form>
   </dialog>
 
+  <!-- PowerPoint → HTML dashboard -->
+  <dialog id="pptDialog" class="dialog wide ppt-dialog">
+    <form id="pptForm">
+      <div class="demo-head">
+        <div>
+          <h2>PowerPoint → HTML dashboard</h2>
+          <p class="muted">Turn a .pptx deck into a modern, responsive one-page dashboard: hero, KPI cards, purpose and employee-value sections, content themes, engagement &amp; impact charts and next steps for managers. Pictures are embedded, so it's a single HTML file. Your file never leaves this browser.</p>
+        </div>
+        <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="ppt-setup">
+        <label class="ppt-drop" id="pptDrop">
+          <input type="file" id="pptInput" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+          <svg class="i"><use href="#i-upload"/></svg>
+          <span id="pptFileName">Choose a .pptx file or drop it here</span>
+        </label>
+        <label class="field">Dashboard title <span class="muted">(optional, defaults to the first slide)</span>
+          <input id="pptTitle" type="text" placeholder="e.g. Our Employee Community">
+        </label>
+        <fieldset class="ppt-themes">
+          <legend>Colour theme</legend>
+          <div id="pptThemes"></div>
+        </fieldset>
+      </div>
+      <p id="pptStatus" class="status-msg" hidden></p>
+      <div id="pptPreviewWrap" class="ppt-preview" hidden>
+        <iframe id="pptPreview" title="Dashboard preview" sandbox="allow-scripts"></iframe>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>Close</button>
+        <button type="button" class="btn" id="pptOpen" hidden>Open in new tab</button>
+        <button type="button" class="btn" id="pptDownload" hidden><svg class="i"><use href="#i-download"/></svg>Download HTML</button>
+        <button type="submit" class="btn primary" id="pptGo"><svg class="i"><use href="#i-sparkle"/></svg>Generate dashboard</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Paste dialog -->
   <dialog id="pasteDialog" class="dialog">
     <form method="dialog" id="pasteForm">
@@ -295,9 +339,10 @@
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="tip" class="tip" hidden></div>
 
-  <script src="js/config.js?v=2026.10.06.2"></script>
-  <script src="js/google-sheets.js?v=2026.10.06.2"></script>
-  <script src="js/demos.js?v=2026.10.06.2"></script>
-  <script src="js/app.js?v=2026.10.06.2"></script>
+  <script src="js/config.js?v=2026.10.15.1"></script>
+  <script src="js/google-sheets.js?v=2026.10.15.1"></script>
+  <script src="js/demos.js?v=2026.10.15.1"></script>
+  <script src="js/ppt-dashboard.js?v=2026.10.15.1"></script>
+  <script src="js/app.js?v=2026.10.15.1"></script>
 </body>
 </html>

@@ -543,3 +543,27 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); width: 1
 
 .opts-head { display: inline-flex; align-items: center; gap: 8px; }
 .opts-head .link { padding: 0; font-size: 11px; text-transform: none; letter-spacing: 0; }
+
+/* ---------- PowerPoint → HTML dashboard ---------- */
+.ppt-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; align-items: start; }
+.ppt-drop {
+  grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  min-height: 150px; margin: 14px 0; padding: 18px; border: 2px dashed var(--border-strong); border-radius: 12px;
+  background: var(--surface-2); color: var(--text-2); font-size: 13.5px; text-align: center; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ppt-drop:hover, .ppt-drop.over { border-color: var(--primary); background: var(--primary-soft); }
+.ppt-drop.has-file { border-style: solid; color: var(--text); font-weight: 600; }
+.ppt-drop svg.i { width: 26px; height: 26px; color: var(--primary); }
+.ppt-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.ppt-themes { border: 0; padding: 0; margin: 0; }
+.ppt-themes legend { font-weight: 600; font-size: 12.5px; color: var(--text-2); margin-bottom: 6px; }
+#pptThemes { display: flex; flex-wrap: wrap; gap: 8px; }
+.ppt-swatch { display: flex; align-items: center; gap: 7px; padding: 5px 10px 5px 5px; border: 1px solid var(--border-strong); border-radius: 99px; font-size: 13px; cursor: pointer; }
+.ppt-swatch input { position: absolute; opacity: 0; pointer-events: none; }
+.ppt-swatch i { width: 22px; height: 22px; border-radius: 50%; }
+.ppt-swatch:has(input:checked) { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.ppt-swatch:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ppt-preview { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; height: min(56vh, 560px); background: var(--surface-2); }
+.ppt-preview iframe { width: 100%; height: 100%; border: 0; display: block; }
+@media (max-width: 640px) { .ppt-setup { grid-template-columns: 1fr; } .ppt-drop { grid-row: auto; min-height: 110px; } }
