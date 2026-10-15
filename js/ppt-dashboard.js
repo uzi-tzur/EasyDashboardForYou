@@ -523,13 +523,15 @@
       </section>` : '';
 
     const anyIllus = impactIllus || nextIllustrative;
-    const nav = [['purpose', tx.purpose], ['value', valueHtml && tx.valueKicker], ['themes', themesHtml && tx.themesKicker], ['impact', tx.impactKicker], ['next', tx.nextKicker]]
-      .filter(x => x[1]).map(([id, l]) => `<a href="#${id}">${esc(l)}</a>`).join('');
+    const nav = [['kpis', tx.kpis], ['purpose', tx.purpose], ['value', valueHtml && tx.valueKicker], ['themes', themesHtml && tx.themesKicker],
+      ['impact', tx.impactKicker], ['next', tx.nextKicker], ['gallery', galleryHtml && tx.galleryKicker]]
+      .filter(x => x[1]).map(([id, l]) => `<a href="#${id}" data-nav="${id}">${esc(l)}</a>`).join('');
 
     const body = `
-<header class="hero">
+<nav class="floatnav" aria-label="Sections" aria-hidden="true"><a href="#top" class="dot" aria-label="Top"></a>${nav}</nav>
+<header class="hero" id="top">
   <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grain"></div>
-  <nav class="topnav"><span class="dot"></span>${nav}</nav>
+  <nav class="topnav" aria-label="Sections"><span class="dot"></span>${nav}</nav>
   <div class="hero-in ${heroImg ? 'has-img' : ''}">
     <div class="hero-copy">
       <span class="eyebrow">${esc(deck.docTitle && deck.docTitle !== title ? deck.docTitle : `${deck.slides.length} ${tx.slides.toLowerCase()} · ${tx.fromDeck}`)}</span>
@@ -596,7 +598,7 @@
   --font:"Segoe UI Variable","Segoe UI",system-ui,-apple-system,Roboto,${rtl ? '"Heebo","Arial Hebrew",' : ''}sans-serif;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a0c14;--surface:#141826;--text:#f2f3f8;--text-2:#b6bad0;--muted:#8a8fa8;--line:rgba(255,255,255,.08);--shadow:0 1px 2px rgba(0,0,0,.4),0 16px 40px -16px rgba(0,0,0,.7);color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#0a0c14;--surface:#141826;--text:#f2f3f8;--text-2:#b6bad0;--muted:#8a8fa8;--line:rgba(255,255,255,.08);color-scheme:dark}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
+*{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--font);-webkit-font-smoothing:antialiased}
 img{max-width:100%;display:block}
 .hero{position:relative;overflow:hidden;background:var(--ink);color:#fff;padding:22px clamp(16px,5vw,64px) clamp(110px,14vw,170px);isolation:isolate}
@@ -608,7 +610,15 @@ img{max-width:100%;display:block}
 .grain{position:absolute;inset:0;z-index:-1;opacity:.12;background-image:radial-gradient(rgba(255,255,255,.6) 1px,transparent 1px);background-size:3px 3px;mask-image:linear-gradient(#000,transparent)}
 .topnav{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center;font-size:14px;max-width:1180px;margin:0 auto}
 .topnav a{color:rgba(255,255,255,.78);text-decoration:none;padding:4px 0}.topnav a:hover{color:#fff}
-.topnav .dot{width:12px;height:12px;border-radius:4px;background:linear-gradient(135deg,var(--a),var(--b));margin-inline-end:8px}
+.topnav .dot,.floatnav .dot{width:12px;height:12px;border-radius:4px;background:linear-gradient(135deg,var(--a),var(--b));margin-inline-end:8px;flex:none;padding:0}
+.floatnav{position:fixed;z-index:50;top:12px;left:50%;transform:translate(-50%,-140%);transition:transform .35s cubic-bezier(.2,.8,.2,1);
+  display:flex;align-items:center;gap:2px;max-width:calc(100vw - 24px);overflow-x:auto;scrollbar-width:none;padding:6px 8px 6px 14px;border-radius:99px;
+  background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(16px);border:1px solid var(--line);box-shadow:var(--shadow);font-size:13.5px;white-space:nowrap}
+.floatnav::-webkit-scrollbar{display:none}
+.floatnav.show{transform:translate(-50%,0)}
+.floatnav a{color:var(--text-2);text-decoration:none;padding:6px 12px;border-radius:99px;transition:background .2s,color .2s}
+.floatnav a:hover{color:var(--text)}
+.floatnav a.on{color:#fff;background:linear-gradient(135deg,var(--a),var(--b))}
 .hero-in{max-width:1180px;margin:clamp(40px,7vw,90px) auto 0;display:grid;gap:48px;align-items:center}
 .hero-in.has-img{grid-template-columns:1.15fr .85fr}
 .eyebrow{display:inline-block;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;padding:6px 12px;border-radius:99px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(8px)}
@@ -631,7 +641,7 @@ main{max-width:1180px;margin:0 auto;padding:0 clamp(16px,4vw,40px) 40px}
 .badge{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:99px;background:color-mix(in srgb,var(--a) 12%,transparent);color:var(--a);white-space:nowrap}
 .badge.illus{background:repeating-linear-gradient(-45deg,rgba(245,158,11,.16) 0 6px,rgba(245,158,11,.08) 6px 12px);color:#b45309;border:1px dashed #f59e0b}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .badge.illus{color:#fbbf24}}
-.sec{margin-top:clamp(64px,9vw,110px);scroll-margin-top:20px}
+.sec,.kpis{scroll-margin-top:76px}main>.sec:last-of-type{min-height:calc(100vh - 220px)}.sec{margin-top:clamp(64px,9vw,110px)}
 .sec-head{margin-bottom:26px;display:flex;flex-wrap:wrap;align-items:end;gap:8px 16px}
 .sec-head .kicker{flex-basis:100%;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;background:linear-gradient(90deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
 .sec-head h2{margin:0;font-size:clamp(26px,3.4vw,40px);letter-spacing:-.025em;line-height:1.1}
@@ -686,7 +696,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px 14px
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}.bar{transform:none}.line{stroke-dashoffset:0}.fill{width:var(--w)}}
 @media (max-width:900px){.hero-in.has-img,.purpose.has-img{grid-template-columns:1fr}.hero-img{transform:none}}
 @media (max-width:520px){.kpis{grid-template-columns:1fr 1fr;gap:12px}.kpi{padding:16px}.kpi-v{font-size:28px}.kpi .badge{display:none}.theme-grid{grid-template-columns:1fr}}
-@media print{.blob,.grain,.cta,.topnav{display:none}.reveal{opacity:1;transform:none}.bar{transform:none}.line{stroke-dashoffset:0}.fill{width:var(--w)}.hero{padding-bottom:60px}.kpis{margin-top:20px}.card,.step,.kpi{break-inside:avoid}}`;
+@media print{.blob,.grain,.cta,.topnav,.floatnav{display:none}.reveal{opacity:1;transform:none}.bar{transform:none}.line{stroke-dashoffset:0}.fill{width:var(--w)}.hero{padding-bottom:60px}.kpis{margin-top:20px}.card,.step,.kpi{break-inside:avoid}}`;
   }
 
   // Small runtime shipped inside the generated file: scroll reveal + KPI count-up.
@@ -695,7 +705,17 @@ const run=el=>{if(el.dataset.done)return;el.dataset.done=1;const n=+el.dataset.n
 const f=v=>el.dataset.pre+(sep?v.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec}):v.toFixed(dec))+el.dataset.suf;
 const step=now=>{const p=Math.min(1,(now-t0)/D),e=1-Math.pow(1-p,3);el.textContent=f(n*e);if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)};
 document.querySelectorAll('.reveal,.viz,.kpi').forEach(el=>io?io.observe(el):el.classList.add('in'));if(!io)document.querySelectorAll('.count').forEach(run);
-window.addEventListener('beforeprint',()=>document.querySelectorAll('.reveal,.viz').forEach(el=>el.classList.add('in')));})();`;
+window.addEventListener('beforeprint',()=>document.querySelectorAll('.reveal,.viz').forEach(el=>el.classList.add('in')));
+/* In-page links scroll here directly, so they also work in previews (srcdoc/blob), where "#id" would load another page. */
+const smooth=()=>matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth';
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a)return;const id=a.getAttribute('href').slice(1),t=id==='top'?document.body:document.getElementById(id);if(!t)return;e.preventDefault();
+scrollTo({top:id==='top'?0:t.getBoundingClientRect().top+scrollY-(parseFloat(getComputedStyle(t).scrollMarginTop)||0),behavior:smooth()});t.querySelectorAll('.reveal').forEach(r=>r.classList.add('in'));try{history.replaceState(null,'','#'+id)}catch(_){}});
+const fn=document.querySelector('.floatnav'),hero=document.querySelector('.hero');
+if(fn&&'IntersectionObserver'in window){new IntersectionObserver(([e])=>{const s=!e.isIntersecting;fn.classList.toggle('show',s);fn.setAttribute('aria-hidden',String(!s))},{threshold:0,rootMargin:'-80px 0px 0px 0px'}).observe(hero);
+const links=new Map([...fn.querySelectorAll('a[data-nav]')].map(a=>[a.dataset.nav,a]));
+const spy=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)return;links.forEach(a=>a.classList.remove('on'));const a=links.get(e.target.id);if(a){a.classList.add('on');fn.scrollTo({left:a.offsetLeft-(fn.clientWidth-a.offsetWidth)/2})}}),{rootMargin:'-45% 0px -50% 0px'});
+links.forEach((_,id)=>{const el=document.getElementById(id);if(el)spy.observe(el)})}
+const h=decodeURIComponent(location.hash.slice(1));if(h&&document.getElementById(h))document.getElementById(h).querySelectorAll('.reveal').forEach(r=>r.classList.add('in'));})();`;
 
   window.PptDashboard = { parse, build, THEMES };
 })();
